@@ -6,7 +6,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-const GROUP_ID = process.env.35844460;
+const GROUP_ID = process.env.GROUP_ID;
 const ALLOWED_ROLE = process.env.16;
 
 async function startApp() {
