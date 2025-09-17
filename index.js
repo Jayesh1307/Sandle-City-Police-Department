@@ -6,7 +6,10 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-import noblox from "noblox.js";
+require("dotenv").config();
+const { Client, GatewayIntentBits } = require("discord.js");
+const noblox = require("noblox.js");
+
 
 const GROUP_ID = process.env.GROUP_ID;
 const ALLOWED_ROLE = process.env.ALLOWED_ROLE;
