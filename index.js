@@ -1,14 +1,14 @@
-require("dotenv").config();
+require("dotenv").config(); // only once at the top
 const { Client, GatewayIntentBits } = require("discord.js");
-const noblox = require("noblox.js");
+const noblox = require("noblox.js"); // only once
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
-
-require("dotenv").config();
-const noblox = require("noblox.js");
-
 
 const GROUP_ID = process.env.GROUP_ID;
 const ALLOWED_ROLE = process.env.ALLOWED_ROLE;
@@ -20,7 +20,6 @@ async function startApp() {
 
 startApp();
 
-
 client.on("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
@@ -28,7 +27,7 @@ client.on("ready", () => {
 client.on("messageCreate", async (msg) => {
   if (!msg.content.startsWith("!")) return;
 
-  // check role
+  // Check role
   if (!msg.member.roles.cache.some(r => r.name === ALLOWED_ROLE)) {
     return msg.reply("❌ You don't have permission to use ranking commands.");
   }
@@ -58,3 +57,5 @@ client.on("messageCreate", async (msg) => {
     }
   }
 });
+
+client.login(process.env.DISCORD_TOKEN);
