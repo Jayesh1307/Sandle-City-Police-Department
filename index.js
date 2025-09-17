@@ -13,9 +13,9 @@ const client = new Client({
 const GROUP_ID = process.env.GROUP_ID;
 const ALLOWED_ROLE = process.env.ALLOWED_ROLE;
 
-async function startApp() {
-  await noblox.setCookie(process.env.ROBLOX_COOKIE);
-  console.log("✅ Logged in to Roblox");
+const noblox = require("noblox.js");
+await noblox.setCookie(process.env.ROBLOX_COOKIE);
+
 }
 
 startApp();
