@@ -1,67 +1,103 @@
-require("dotenv").config(); // only once at the top
-const { Client, GatewayIntentBits } = require("discord.js");
-const noblox = require("noblox.js"); // only once
+require("dotenv").config();
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require("discord.js");
+const noblox = require("noblox.js");
 
+// Create Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildMembers
   ]
 });
 
+// Environment variables
 const GROUP_ID = process.env.GROUP_ID;
-const ALLOWED_ROLE = process.env.ALLOWED_ROLE;
+const ALLOWED_ROLE = process.env.ALLOWED_ROLE; // Role name or use ID (recommended)
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const ROBLOX_COOKIE = process.env.ROBLOX_COOKIE;
 
-// Wrap Noblox login inside an async function
-async function startApp() {
+// Roblox login function
+async function loginRoblox() {
   try {
-    await noblox.setCookie(process.env.ROBLOX_COOKIE);
+    await noblox.setCookie(ROBLOX_COOKIE);
     console.log("✅ Logged into Roblox successfully!");
   } catch (err) {
     console.error("❌ Failed to log into Roblox:", err);
-    process.exit(1); // Stop the bot if login fails
+    process.exit(1); // Stop bot if Roblox login fails
   }
 }
 
-startApp();
+// Register slash commands
+async function registerCommands() {
+  const commands = [
+    new SlashCommandBuilder()
+      .setName("promote")
+      .setDescription("Promote a Roblox user in the group")
+      .addStringOption(option =>
+        option.setName("username")
+          .setDescription("Roblox username")
+          .setRequired(true)
+      ),
+    new SlashCommandBuilder()
+      .setName("demote")
+      .setDescription("Demote a Roblox user in the group")
+      .addStringOption(option =>
+        option.setName("username")
+          .setDescription("Roblox username")
+          .setRequired(true)
+      )
+  ].map(cmd => cmd.toJSON());
 
-client.on("ready", () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-});
+  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
-client.on("messageCreate", async (msg) => {
-  if (!msg.content.startsWith("!")) return;
+  try {
+    console.log("🔄 Registering slash commands...");
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+    console.log("✅ Slash commands registered!");
+  } catch (err) {
+    console.error("❌ Failed to register commands:", err);
+  }
+}
 
-  // Check role
-  if (!msg.member.roles.cache.some(r => r.name === ALLOWED_ROLE)) {
-    return msg.reply("❌ You don't have permission to use ranking commands.");
+// Handle slash command interactions
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const username = interaction.options.getString("username");
+
+  // Role check
+  if (!interaction.member.roles.cache.some(r => r.name === ALLOWED_ROLE)) {
+    return interaction.reply({ content: "❌ You don't have permission.", ephemeral: true });
   }
 
-  const args = msg.content.slice(1).split(" ");
-  const command = args.shift().toLowerCase();
-
-  if (command === "promote") {
-    let username = args[0];
+  if (interaction.commandName === "promote") {
     try {
       const userId = await noblox.getIdFromUsername(username);
       await noblox.promote(GROUP_ID, userId);
-      msg.reply(`✅ Promoted ${username} in the group!`);
+      await interaction.reply(`✅ Promoted ${username} in the group!`);
     } catch (err) {
-      msg.reply("❌ Error promoting user: " + err);
+      await interaction.reply(`❌ Error promoting user: ${err}`);
     }
   }
 
-  if (command === "demote") {
-    let username = args[0];
+  if (interaction.commandName === "demote") {
     try {
       const userId = await noblox.getIdFromUsername(username);
       await noblox.demote(GROUP_ID, userId);
-      msg.reply(`✅ Demoted ${username} in the group!`);
+      await interaction.reply(`✅ Demoted ${username} in the group!`);
     } catch (err) {
-      msg.reply("❌ Error demoting user: " + err);
+      await interaction.reply(`❌ Error demoting user: ${err}`);
     }
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+// Start bot
+(async () => {
+  await loginRoblox();
+  client.once("clientReady", async () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    await registerCommands();
+  });
+
+  client.login(DISCORD_TOKEN);
+})();
