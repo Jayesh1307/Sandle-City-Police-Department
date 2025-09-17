@@ -7,7 +7,6 @@ const client = new Client({
 });
 
 require("dotenv").config();
-const { Client, GatewayIntentBits } = require("discord.js");
 const noblox = require("noblox.js");
 
 
