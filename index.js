@@ -13,9 +13,15 @@ const client = new Client({
 const GROUP_ID = process.env.GROUP_ID;
 const ALLOWED_ROLE = process.env.ALLOWED_ROLE;
 
-const noblox = require("noblox.js");
-await noblox.setCookie(process.env.ROBLOX_COOKIE);
-
+// Wrap Noblox login inside an async function
+async function startApp() {
+  try {
+    await noblox.setCookie(process.env.ROBLOX_COOKIE);
+    console.log("✅ Logged into Roblox successfully!");
+  } catch (err) {
+    console.error("❌ Failed to log into Roblox:", err);
+    process.exit(1); // Stop the bot if login fails
+  }
 }
 
 startApp();
