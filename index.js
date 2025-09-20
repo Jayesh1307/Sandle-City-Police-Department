@@ -38,50 +38,40 @@ client.on("interactionCreate", async (interaction) => {
   const { commandName, options } = interaction;
 
   if (commandName === "promote") {
-    const username = options.getString("username");
-    try {
-      const userId = await noblox.getIdFromUsername(username);
-      await noblox.promote(GROUP_ID, userId);
-      await interaction.reply(`✅ Promoted **${username}** in the group!`);
-    } catch (err) {
-      console.error(err);
-      await interaction.reply(`❌ Error promoting **${username}**: ${err.message}`);
-    }
+  const username = options.getString("username");
+  try {
+    const userId = await noblox.getIdFromUsername(username);
+    await noblox.promote(GROUP_ID, userId);
+    await interaction.reply({
+      content: `✅ Promoted **${username}** in the group!`,
+      ephemeral: false // 👈 makes it public
+    });
+  } catch (err) {
+    console.error(err);
+    await interaction.reply({
+      content: `❌ Error promoting **${username}**: ${err.message}`,
+      ephemeral: false
+    });
   }
+}
 
-  if (commandName === "demote") {
-    const username = options.getString("username");
-    try {
-      const userId = await noblox.getIdFromUsername(username);
-      await noblox.demote(GROUP_ID, userId);
-      await interaction.reply(`✅ Demoted **${username}** in the group!`);
-    } catch (err) {
-      console.error(err);
-      await interaction.reply(`❌ Error demoting **${username}**: ${err.message}`);
-    }
+if (commandName === "demote") {
+  const username = options.getString("username");
+  try {
+    const userId = await noblox.getIdFromUsername(username);
+    await noblox.demote(GROUP_ID, userId);
+    await interaction.reply({
+      content: `✅ Demoted **${username}** in the group!`,
+      ephemeral: false // 👈 makes it public
+    });
+  } catch (err) {
+    console.error(err);
+    await interaction.reply({
+      content: `❌ Error demoting **${username}**: ${err.message}`,
+      ephemeral: false
+    });
   }
-});
-
-  if (interaction.commandName === "demote") {
-    const username = interaction.options.getString("username");
-
-    try {
-      const userId = await noblox.getIdFromUsername(username);
-      await noblox.demote(GROUP_ID, userId);
-
-      await interaction.reply({
-        content: `✅ Demoted **${username}** in the group!`,
-        ephemeral: true,
-      });
-    } catch (err) {
-      console.error(err);
-      await interaction.reply({
-        content: "❌ Error demoting user.",
-        ephemeral: true,
-      });
-    }
-  }
-});
+}
 
 client.on("messageCreate", async (msg) => {
   if (!msg.content.startsWith("!")) return;
