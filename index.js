@@ -38,40 +38,41 @@ client.on("interactionCreate", async (interaction) => {
   const { commandName, options } = interaction;
 
   if (commandName === "promote") {
-  const username = options.getString("username");
-  try {
-    const userId = await noblox.getIdFromUsername(username);
-    await noblox.promote(GROUP_ID, userId);
-    await interaction.reply({
-      content: `✅ Promoted **${username}** in the group!`,
-      ephemeral: false // 👈 makes it public
-    });
-  } catch (err) {
-    console.error(err);
-    await interaction.reply({
-      content: `❌ Error promoting **${username}**: ${err.message}`,
-      ephemeral: false
-    });
+    const username = options.getString("username");
+    try {
+      const userId = await noblox.getIdFromUsername(username);
+      await noblox.promote(GROUP_ID, userId);
+      await interaction.reply({
+        content: `✅ Promoted **${username}** in the group!`,
+        ephemeral: false
+      });
+    } catch (err) {
+      console.error(err);
+      await interaction.reply({
+        content: `❌ Error promoting **${username}**: ${err.message}`,
+        ephemeral: false
+      });
+    }
   }
-}
 
-if (commandName === "demote") {
-  const username = options.getString("username");
-  try {
-    const userId = await noblox.getIdFromUsername(username);
-    await noblox.demote(GROUP_ID, userId);
-    await interaction.reply({
-      content: `✅ Demoted **${username}** in the group!`,
-      ephemeral: false // 👈 makes it public
-    });
-  } catch (err) {
-    console.error(err);
-    await interaction.reply({
-      content: `❌ Error demoting **${username}**: ${err.message}`,
-      ephemeral: false
-    });
+  if (commandName === "demote") {
+    const username = options.getString("username");
+    try {
+      const userId = await noblox.getIdFromUsername(username);
+      await noblox.demote(GROUP_ID, userId);
+      await interaction.reply({
+        content: `✅ Demoted **${username}** in the group!`,
+        ephemeral: false
+      });
+    } catch (err) {
+      console.error(err);
+      await interaction.reply({
+        content: `❌ Error demoting **${username}**: ${err.message}`,
+        ephemeral: false
+      });
+    }
   }
-}
+});
 
 client.on("messageCreate", async (msg) => {
   if (!msg.content.startsWith("!")) return;
