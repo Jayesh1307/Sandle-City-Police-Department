@@ -33,27 +33,34 @@ client.on("ready", () => {
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+  if (!interaction.isCommand()) return;
 
-  if (interaction.commandName === "promote") {
-    const username = interaction.options.getString("username");
+  const { commandName, options } = interaction;
 
+  if (commandName === "promote") {
+    const username = options.getString("username");
     try {
       const userId = await noblox.getIdFromUsername(username);
       await noblox.promote(GROUP_ID, userId);
-
-      await interaction.reply({
-        content: `✅ Promoted **${username}** in the group!`,
-        ephemeral: true,
-      });
+      await interaction.reply(`✅ Promoted **${username}** in the group!`);
     } catch (err) {
       console.error(err);
-      await interaction.reply({
-        content: "❌ Error promoting user.",
-        ephemeral: true,
-      });
+      await interaction.reply(`❌ Error promoting **${username}**: ${err.message}`);
     }
   }
+
+  if (commandName === "demote") {
+    const username = options.getString("username");
+    try {
+      const userId = await noblox.getIdFromUsername(username);
+      await noblox.demote(GROUP_ID, userId);
+      await interaction.reply(`✅ Demoted **${username}** in the group!`);
+    } catch (err) {
+      console.error(err);
+      await interaction.reply(`❌ Error demoting **${username}**: ${err.message}`);
+    }
+  }
+});
 
   if (interaction.commandName === "demote") {
     const username = interaction.options.getString("username");
