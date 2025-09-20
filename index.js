@@ -40,7 +40,7 @@ client.on("interactionCreate", async (interaction) => {
   if (commandName === "promote") {
     const username = options.getString("username");
     try {
-      const userId = await noblox.getIdFromUsername(username);
+      const userId = await noblox.getRankInGroup(GROUP_ID, userId);
       await noblox.promote(GROUP_ID, userId);
       await interaction.reply({
         content: `✅ Promoted **${username}** in the group!`,
