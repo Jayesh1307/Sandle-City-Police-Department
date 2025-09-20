@@ -32,6 +32,50 @@ client.on("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === "promote") {
+    const username = interaction.options.getString("username");
+
+    try {
+      const userId = await noblox.getIdFromUsername(username);
+      await noblox.promote(GROUP_ID, userId);
+
+      await interaction.reply({
+        content: `✅ Promoted **${username}** in the group!`,
+        ephemeral: true,
+      });
+    } catch (err) {
+      console.error(err);
+      await interaction.reply({
+        content: "❌ Error promoting user.",
+        ephemeral: true,
+      });
+    }
+  }
+
+  if (interaction.commandName === "demote") {
+    const username = interaction.options.getString("username");
+
+    try {
+      const userId = await noblox.getIdFromUsername(username);
+      await noblox.demote(GROUP_ID, userId);
+
+      await interaction.reply({
+        content: `✅ Demoted **${username}** in the group!`,
+        ephemeral: true,
+      });
+    } catch (err) {
+      console.error(err);
+      await interaction.reply({
+        content: "❌ Error demoting user.",
+        ephemeral: true,
+      });
+    }
+  }
+});
+
 client.on("messageCreate", async (msg) => {
   if (!msg.content.startsWith("!")) return;
   if (!msg.member.roles.cache.some(r => r.name === ALLOWED_ROLE)) {
