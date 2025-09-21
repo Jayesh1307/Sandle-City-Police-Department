@@ -151,11 +151,10 @@ client.once("ready", () => {
 
 // --- Start bot ---
 import express from "express";
+
 const app = express();
 
-// Respond to root requests
 app.get("/", (req, res) => res.send("✅ Bot is running!"));
 
-// Listen on Render's assigned PORT or default 3000
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 HTTP server listening on port ${PORT}`));
