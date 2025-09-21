@@ -1,5 +1,7 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from "discord.js";
 import fetch from "node-fetch";
+import dotenv from "dotenv";
+dotenv.config();
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -8,7 +10,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const ROBLOX_COOKIE = process.env.ROBLOX_COOKIE;
 const GROUP_ID = process.env.GROUP_ID;
-const LOGS_CHANNEL_ID = process.env.LOGS_CHANNEL_ID; // set this in env
+const LOGS_CHANNEL_ID = process.env.LOGS_CHANNEL_ID;
 
 // Fetch Roblox group roles
 async function getRoles() {
@@ -17,7 +19,7 @@ async function getRoles() {
   return data.roles;
 }
 
-// Promote or demote user
+// Set Roblox rank
 async function setRank(userId, roleId) {
   const res = await fetch(`https://groups.roblox.com/v1/groups/${GROUP_ID}/users/${userId}`, {
     method: "PATCH",
@@ -35,11 +37,11 @@ async function setRank(userId, roleId) {
   return await res.json();
 }
 
-// Slash command with autocomplete
+// Slash command
 const commands = [
   new SlashCommandBuilder()
     .setName("rank")
-    .setDescription("Set a user’s rank in the Roblox group")
+    .setDescription("Set a Roblox user’s rank in the group")
     .addStringOption(option =>
       option.setName("user")
         .setDescription("Roblox username")
@@ -81,39 +83,21 @@ client.on("interactionCreate", async (interaction) => {
 
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === "rank") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false }); // visible to everyone
 
       const username = interaction.options.getString("user");
       const roleId = parseInt(interaction.options.getString("rank"));
 
       try {
-        // Get target user ID
+        // Get Roblox user ID
         const userRes = await fetch(`https://api.roblox.com/users/get-by-username?username=${username}`);
         const userData = await userRes.json();
         if (!userData.Id) throw new Error("Invalid Roblox username.");
         const userId = userData.Id;
 
-        // Get group roles
         const roles = await getRoles();
-
-        // Get target's current role
-        const targetRes = await fetch(`https://groups.roblox.com/v2/users/${userId}/groups/roles`);
-        const targetData = await targetRes.json();
-        const targetGroup = targetData.data.find(g => g.group.id == GROUP_ID);
-        const targetRole = targetGroup?.role;
-
-        // Get executor's linked Roblox account (you may need to connect your verification system here)
-        // For now, assume executor can't promote/demote equal or higher roles
-        const executorRole = { rank: 255 }; // Replace with actual verification system
-
-        if (targetRole && targetRole.rank >= executorRole.rank) {
-          return await interaction.editReply(`❌ You cannot change the rank of someone equal or higher than you.`);
-        }
-
-        // Get target role name
         const roleName = roles.find(r => r.id === roleId)?.name || "Unknown";
 
-        // Set new rank
         await setRank(userId, roleId);
 
         await interaction.editReply(`✅ Changed **${username}** to **${roleName}**.`);
