@@ -1,10 +1,9 @@
+// index.js
 import "dotenv/config";
-import { Client, GatewayIntentBits, REST, Routes, PermissionFlagsBits } from "discord.js";
+import { Client, GatewayIntentBits, REST, Routes } from "discord.js";
 import noblox from "noblox.js";
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
-// Load env vars
+// --- Load environment variables ---
 const {
   DISCORD_TOKEN,
   CLIENT_ID,
@@ -16,60 +15,49 @@ const {
   LOGS_CHANNEL_ID
 } = process.env;
 
-// Login to Roblox
+// Basic validation
+if (!DISCORD_TOKEN || !CLIENT_ID || !GUILD_ID || !GROUP_ID || !ROBLOX_COOKIE) {
+  console.error("❌ Missing required environment variables. Check your .env file.");
+  process.exit(1);
+}
+
+// --- Initialize Discord client ---
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+// --- Roblox login ---
 async function startNoblox() {
   try {
     await noblox.setCookie(ROBLOX_COOKIE);
-    console.log("✅ Logged into Roblox");
+    console.log("✅ Logged into Roblox successfully!");
   } catch (err) {
     console.error("❌ Roblox login failed:", err);
+    process.exit(1);
   }
 }
 
-// Register slash commands
+// --- Register slash commands ---
 async function registerCommands() {
   const commands = [
     {
       name: "promote",
       description: "Promote a user in the Roblox group",
       options: [
-        {
-          name: "username",
-          type: 3, // STRING
-          description: "The Roblox username to promote",
-          required: true
-        }
+        { name: "username", type: 3, description: "Roblox username", required: true }
       ]
     },
     {
       name: "demote",
       description: "Demote a user in the Roblox group",
       options: [
-        {
-          name: "username",
-          type: 3,
-          description: "The Roblox username to demote",
-          required: true
-        }
+        { name: "username", type: 3, description: "Roblox username", required: true }
       ]
     },
     {
       name: "rank",
       description: "Set a user's rank in the Roblox group",
       options: [
-        {
-          name: "username",
-          type: 3,
-          description: "The Roblox username",
-          required: true
-        },
-        {
-          name: "rank",
-          type: 3,
-          description: "The rank name to set",
-          required: true,
-          autocomplete: true
-        }
+        { name: "username", type: 3, description: "Roblox username", required: true },
+        { name: "rank", type: 3, description: "Rank name", required: true }
       ]
     }
   ];
@@ -82,22 +70,22 @@ async function registerCommands() {
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commands }
     );
-    console.log("✅ Slash commands registered");
+    console.log("✅ Slash commands registered successfully!");
   } catch (err) {
     console.error("❌ Failed to register commands:", err);
   }
 }
 
-// Handle interactions
+// --- Handle interactions ---
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  // ✅ Channel restriction
+  // Channel restriction
   if (interaction.channelId !== ALLOWED_CHANNEL_ID) {
     return interaction.reply({ content: "❌ You can only use this command in the designated channel.", ephemeral: true });
   }
 
-  // ✅ Role restriction
+  // Role restriction
   if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
     return interaction.reply({ content: "❌ You do not have permission to use this command.", ephemeral: true });
   }
@@ -114,11 +102,9 @@ client.on("interactionCreate", async (interaction) => {
 
       await interaction.reply(`✅ Promoted **${username}** from **${oldRank}** → **${newRank}**`);
 
-      // Log to logs channel
+      // Log
       const logChannel = guild.channels.cache.get(LOGS_CHANNEL_ID);
-      if (logChannel) {
-        logChannel.send(`📈 **${user.tag}** promoted **${username}** from **${oldRank}** → **${newRank}**`);
-      }
+      if (logChannel) logChannel.send(`📈 **${user.tag}** promoted **${username}** from **${oldRank}** → **${newRank}**`);
     }
 
     if (commandName === "demote") {
@@ -130,11 +116,8 @@ client.on("interactionCreate", async (interaction) => {
 
       await interaction.reply(`✅ Demoted **${username}** from **${oldRank}** → **${newRank}**`);
 
-      // Log to logs channel
       const logChannel = guild.channels.cache.get(LOGS_CHANNEL_ID);
-      if (logChannel) {
-        logChannel.send(`📉 **${user.tag}** demoted **${username}** from **${oldRank}** → **${newRank}**`);
-      }
+      if (logChannel) logChannel.send(`📉 **${user.tag}** demoted **${username}** from **${oldRank}** → **${newRank}**`);
     }
 
     if (commandName === "rank") {
@@ -142,7 +125,6 @@ client.on("interactionCreate", async (interaction) => {
       const rankName = options.getString("rank");
       const userId = await noblox.getIdFromUsername(username);
 
-      // Get all roles in the group
       const roles = await noblox.getRoles(GROUP_ID);
       const targetRole = roles.find(r => r.name.toLowerCase() === rankName.toLowerCase());
       if (!targetRole) return interaction.reply({ content: "❌ Rank not found in group.", ephemeral: true });
@@ -152,11 +134,8 @@ client.on("interactionCreate", async (interaction) => {
 
       await interaction.reply(`✅ Set rank of **${username}** from **${oldRank}** → **${targetRole.name}**`);
 
-      // Log to logs channel
       const logChannel = guild.channels.cache.get(LOGS_CHANNEL_ID);
-      if (logChannel) {
-        logChannel.send(`⚡ **${user.tag}** set **${username}**'s rank from **${oldRank}** → **${targetRole.name}**`);
-      }
+      if (logChannel) logChannel.send(`⚡ **${user.tag}** set **${username}**'s rank from **${oldRank}** → **${targetRole.name}**`);
     }
 
   } catch (err) {
@@ -165,11 +144,14 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// Start bot
+// --- Discord ready ---
 client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-startNoblox();
-registerCommands();
-client.login(DISCORD_TOKEN);
+// --- Start bot ---
+(async () => {
+  await startNoblox();
+  await registerCommands();
+  client.login(DISCORD_TOKEN);
+})();
