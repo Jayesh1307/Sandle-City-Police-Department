@@ -1,7 +1,6 @@
 {
-  "name": "sandle-city-police-bot",
+  "name": "discord-bot",
   "version": "1.0.0",
-  "description": "Discord bot for Sandle City Police Department with Roblox group rank management",
   "type": "module",
   "main": "index.js",
   "scripts": {
