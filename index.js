@@ -16,14 +16,18 @@ app.listen(PORT, () => console.log(`Express server running on port ${PORT}`));
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 // Login to Roblox
+import noblox from 'noblox.js';
+
 async function loginRoblox() {
   try {
-    await noblox.loginCookie(process.env.ROBLOX_COOKIE);
-    console.log('✅ Logged into Roblox');
+    await noblox.setCookie(process.env.ROBLOX_COOKIE); // v6+ uses setCookie
+    const currentUser = await noblox.getCurrentUser();
+    console.log(`✅ Logged into Roblox as ${currentUser.UserName}`);
   } catch (err) {
     console.error('❌ Failed to log in to Roblox:', err);
   }
 }
+
 
 // Fetch Roblox group roles
 async function getGroupRoles() {
