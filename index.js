@@ -1,111 +1,104 @@
 // index.js
 import 'dotenv/config';
-import express from 'express';
-import { Client, GatewayIntentBits, Routes, SlashCommandBuilder } from 'discord.js';
-import { REST } from '@discordjs/rest';
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import noblox from 'noblox.js';
+import express from 'express';
 
+// Load environment variables
+const {
+  DISCORD_TOKEN,
+  CLIENT_ID,
+  GUILD_ID,
+  LOGS_CHANNEL_ID,
+  ROBLOX_COOKIE,
+  ALLOWED_ROLE
+} = process.env;
+
+// Express setup to keep bot alive
 const app = express();
-const PORT = process.env.PORT || 10000;
-
-// Express server (for Render)
-app.get('/', (req, res) => res.send('Bot is running!'));
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Express server running on port ${PORT}`));
 
-// Discord client
+// Discord client setup
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Login to Roblox
-import noblox from 'noblox.js';
-
+// Roblox login
 async function loginRoblox() {
   try {
-    await noblox.setCookie(process.env.ROBLOX_COOKIE); // v6+ uses setCookie
-    const currentUser = await noblox.getCurrentUser();
-    console.log(`✅ Logged into Roblox as ${currentUser.UserName}`);
+    await noblox.cookieLogin(ROBLOX_COOKIE); // updated function
+    console.log('✅ Logged into Roblox');
   } catch (err) {
     console.error('❌ Failed to log in to Roblox:', err);
   }
 }
 
+// Slash command: /rank
+const commands = [
+  new SlashCommandBuilder()
+    .setName('rank')
+    .setDescription('Promote or demote a Roblox user')
+    .addStringOption(option => option.setName('username').setDescription('Roblox username').setRequired(true))
+    .addStringOption(option => option.setName('rank').setDescription('New rank name').setRequired(true))
+    .toJSON()
+];
 
-// Fetch Roblox group roles
-async function getGroupRoles() {
+// Register commands
+const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+(async () => {
   try {
-    const roles = await noblox.getRoles(process.env.GROUP_ID);
-    // Sort ascending by rank
-    return roles.sort((a, b) => a.rank - b.rank);
-  } catch (err) {
-    console.error('❌ Failed to fetch Roblox roles:', err);
-    return [];
-  }
-}
-
-// Register slash command dynamically
-async function registerCommands() {
-  const roles = await getGroupRoles();
-  const rankChoices = roles.map(r => ({ name: r.name, value: r.rank }));
-
-  const commands = [
-    new SlashCommandBuilder()
-      .setName('rank')
-      .setDescription('Promote or demote a user in Roblox')
-      .addUserOption(option => option.setName('user').setDescription('Discord user').setRequired(true))
-      .addIntegerOption(option =>
-        option
-          .setName('rank')
-          .setDescription('Rank to assign')
-          .setRequired(true)
-          .addChoices(...rankChoices)
-      )
-  ];
-
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  try {
-    await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID), { body: commands });
-    console.log('✅ Slash command /rank registered');
+    console.log('Registering commands...');
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+    console.log('✅ Slash commands registered.');
   } catch (err) {
     console.error(err);
   }
-}
+})();
 
-// Handle rank command
+// Handle interactions
 client.on('interactionCreate', async interaction => {
-  if (!interaction.isCommand()) return;
-  if (interaction.commandName !== 'rank') return;
+  if (!interaction.isChatInputCommand()) return;
 
-  const targetUser = interaction.options.getUser('user');
-  const rank = interaction.options.getInteger('rank');
+  if (interaction.commandName === 'rank') {
+    const username = interaction.options.getString('username');
+    const newRank = interaction.options.getString('rank');
 
-  try {
-    // Roblox username of the promoter (discord user)
-    const promoterRoblox = await noblox.getIdFromUsername(interaction.user.username);
-    const promoterRank = await noblox.getRankInGroup(process.env.GROUP_ID, promoterRoblox);
-
-    if (rank >= promoterRank) {
-      return interaction.reply({ content: '❌ You cannot assign a rank equal or higher than your own!', ephemeral: true });
+    // Check role
+    if (!interaction.member.roles.cache.some(r => r.name === ALLOWED_ROLE)) {
+      return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
-    // Assign rank
-    const targetRoblox = await noblox.getIdFromUsername(targetUser.username);
-    await noblox.setRank(process.env.GROUP_ID, targetRoblox, rank);
+    try {
+      const userId = await noblox.getIdFromUsername(username);
+      const currentRank = await noblox.getRankInGroup(parseInt(process.env.GROUP_ID), userId);
 
-    // Log in Discord
-    const logsChannel = await client.channels.fetch(process.env.LOGS_CHANNEL_ID);
-    logsChannel.send(`${interaction.user.tag} promoted/demoted ${targetUser.tag} to rank ${rank}`);
+      const roles = await noblox.getRoles(process.env.GROUP_ID);
+      const targetRank = roles.find(r => r.name.toLowerCase() === newRank.toLowerCase());
 
-    await interaction.reply({ content: `✅ ${targetUser.tag} has been assigned rank ${rank}`, ephemeral: true });
-  } catch (err) {
-    console.error(err);
-    await interaction.reply({ content: '❌ Failed to assign rank. Make sure Roblox usernames are correct.', ephemeral: true });
+      if (!targetRank) return interaction.reply({ content: '❌ Invalid rank.', ephemeral: true });
+      if (currentRank.rank >= targetRank.rank) return interaction.reply({ content: '❌ Cannot promote to equal or lower rank.', ephemeral: true });
+
+      const executorRank = await noblox.getRankInGroup(parseInt(process.env.GROUP_ID), await noblox.getIdFromUsername(interaction.user.username));
+      if (executorRank.rank <= targetRank.rank) return interaction.reply({ content: '❌ You cannot promote to this rank.', ephemeral: true });
+
+      await noblox.setRank(process.env.GROUP_ID, userId, targetRank.rank);
+
+      interaction.reply({ content: `✅ ${username} has been promoted to ${targetRank.name}.` });
+
+      // Log promotion
+      const logsChannel = await client.channels.fetch(LOGS_CHANNEL_ID);
+      logsChannel.send(`📢 **${interaction.user.tag}** promoted **${username}** to **${targetRank.name}**`);
+    } catch (err) {
+      console.error(err);
+      interaction.reply({ content: '❌ Failed to assign rank. Make sure Roblox usernames are correct.', ephemeral: true });
+    }
   }
 });
 
-// Discord login
+// Start bot
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   await loginRoblox();
-  await registerCommands();
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(DISCORD_TOKEN);
