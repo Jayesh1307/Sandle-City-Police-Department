@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import { Client, GatewayIntentBits, REST, Routes, InteractionResponseType, InteractionResponseFlags } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
 import noblox from 'noblox.js';
 
 // Environment variables
@@ -16,7 +16,7 @@ const {
 
 // --- CRITICAL CHECKS ---
 if (!DISCORD_TOKEN || !GUILD_ID || !ROBLOX_COOKIE || !ROBLOX_GROUP_ID) {
-  console.error('❌ ERROR: Missing required environment variables. Please check your .env file.');
+  console.error('❌ ERROR: Missing required environment variables. Please check your .env file or Render settings.');
   process.exit(1);
 }
 
@@ -38,6 +38,7 @@ async function loginRoblox() {
   } catch (err) {
     console.error('❌ Failed to log in to Roblox. Check your ROBLOX_COOKIE and ensure it is valid.');
     console.error(err);
+    process.exit(1); // Exit if Roblox login fails, as the bot cannot function without it
   }
 }
 
@@ -79,7 +80,7 @@ client.on('interactionCreate', async interaction => {
   if (interaction.commandName === 'rank') {
     // Permission check: ensure the user has the allowed role
     if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
-      return interaction.reply({ content: '❌ You are not allowed to use this command.', flags: InteractionResponseFlags.Ephemeral });
+      return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
     // Immediately defer the reply to avoid a timeout
@@ -137,7 +138,7 @@ client.on('interactionCreate', async interaction => {
           }
         } catch (err) {
           console.error('❌ Error during rank change:', err);
-          await i.editReply({ content: `❌ An error occurred while trying to rank the user. Please try again. Make sure the Roblox user is in the group and that the bot has permission to set the rank.` });
+          await i.editReply({ content: `❌ An error occurred while trying to rank the user. Make sure the Roblox user is in the group and the bot has permission to set the rank.` });
         }
         collector.stop();
       });
@@ -151,8 +152,7 @@ client.on('interactionCreate', async interaction => {
 
     } catch (err) {
       console.error('❌ Error in rank command:', err);
-      // If any error occurs before the collector, edit the initial deferred reply
-      await interaction.editReply({ content: `❌ An unexpected error occurred. Please try again later. Make sure the username is correct and the bot has permissions in the Roblox group.` });
+      await interaction.editReply({ content: `❌ An unexpected error occurred. Please try again later. Make sure the username is correct.` });
     }
   }
 });
