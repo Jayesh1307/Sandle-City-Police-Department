@@ -1,65 +1,80 @@
+// index.js
 import 'dotenv/config';
-import { Client, GatewayIntentBits, Collection } from 'discord.js';
-import fs from 'fs';
-import path from 'path';
-import noblox from 'noblox.js';
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import express from 'express';
+import noblox from 'noblox.js';
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-client.commands = new Collection();
-
-// Load slash commands
-const commandsPath = path.join('./commands'); // your commands folder
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-for (const file of commandFiles) {
-  const filePath = path.join(commandsPath, file);
-  const command = await import(filePath);
-  client.commands.set(command.data.name, command);
-}
-
-// Express server to keep bot online
+// ---------- EXPRESS SERVER TO KEEP BOT ONLINE ----------
 const app = express();
-app.get('/', (req, res) => res.send('Bot is running'));
-app.listen(process.env.PORT || 3000, () => console.log('Express server running'));
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Bot is online!'));
+app.listen(PORT, () => console.log(`Express server running on port ${PORT}`));
 
-// Discord ready event
-client.once('clientReady', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-});
+// ---------- DISCORD BOT ----------
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 // Roblox login
 async function loginRoblox() {
-  try {
-    await noblox.cookieLogin(process.env.ROBLOX_COOKIE);
-    console.log('✅ Logged into Roblox');
-  } catch (err) {
-    console.error('❌ Failed to log in to Roblox:', err);
-  }
-}
-await loginRoblox();
-
-// Interaction handler
-client.on('interactionCreate', async interaction => {
-  if (interaction.isChatInputCommand()) {
-    const command = client.commands.get(interaction.commandName);
-    if (!command) return;
     try {
-      await command.execute(interaction);
+        await noblox.setCookie(process.env.ROBLOX_COOKIE);
+        console.log('✅ Logged into Roblox');
     } catch (err) {
-      console.error(err);
-      await interaction.reply({ content: 'There was an error executing that command.', ephemeral: true });
+        console.error('❌ Failed to log in to Roblox:', err);
     }
-  }
+}
 
-  // Handle rank dropdown interaction
-  if (interaction.isStringSelectMenu()) {
-    const command = client.commands.get('rank'); // your rank command
-    if (command && command.executeSelectMenu) {
-      await command.executeSelectMenu(interaction);
+// Register slash commands manually
+const commands = [
+    new SlashCommandBuilder()
+        .setName('rank')
+        .setDescription('Assign a rank to a Roblox user')
+        .addStringOption(option =>
+            option.setName('username')
+                .setDescription('Roblox username')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('rank')
+                .setDescription('Roblox rank number')
+                .setRequired(true))
+].map(command => command.toJSON());
+
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
+async function registerCommands() {
+    try {
+        await rest.put(
+            Routes.applicationCommands(process.env.CLIENT_ID),
+            { body: commands }
+        );
+        console.log('✅ Slash commands registered.');
+    } catch (err) {
+        console.error('❌ Error registering commands:', err);
     }
-  }
+}
+
+client.on('clientReady', async () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    await loginRoblox();
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand()) return;
 
-export default client;
+    if (interaction.commandName === 'rank') {
+        const username = interaction.options.getString('username');
+        const rank = interaction.options.getInteger('rank');
+
+        try {
+            const userId = await noblox.getIdFromUsername(username);
+            await noblox.setRank(process.env.GROUP_ID, userId, rank);
+            await interaction.reply(`✅ Successfully set **${username}** to rank **${rank}**`);
+        } catch (err) {
+            console.error(err);
+            await interaction.reply(`❌ Failed to assign rank. Make sure Roblox usernames are correct.`);
+        }
+    }
+});
+
+// Start bot
+registerCommands();
+client.login(process.env.DISCORD_TOKEN);
