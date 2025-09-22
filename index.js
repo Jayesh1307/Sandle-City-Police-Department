@@ -1,16 +1,16 @@
 import 'dotenv/config';
 import express from 'express';
-import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes, InteractionResponseType, InteractionResponseFlags } from 'discord.js';
 import noblox from 'noblox.js';
 
 // Environment variables
-// Note: You must create a .env file with these variables.
 const {
   DISCORD_TOKEN,
   ALLOWED_ROLE,
   GUILD_ID,
+  LOGS_CHANNEL_ID,
   ROBLOX_COOKIE,
-  ROBLOX_GROUP_ID, // ADD THIS NEW VARIABLE
+  ROBLOX_GROUP_ID,
   PORT = 3000
 } = process.env;
 
@@ -79,14 +79,25 @@ client.on('interactionCreate', async interaction => {
   if (interaction.commandName === 'rank') {
     // Permission check: ensure the user has the allowed role
     if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
-      return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
+      return interaction.reply({ content: '❌ You are not allowed to use this command.', flags: InteractionResponseFlags.Ephemeral });
     }
 
+    // Immediately defer the reply to avoid a timeout
     await interaction.deferReply({ ephemeral: true });
 
     const username = interaction.options.getString('username');
     try {
-      const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID)); // FIX: Use ROBLOX_GROUP_ID here!
+      // Find the Roblox user ID
+      const userId = await noblox.getIdFromUsername(username);
+
+      if (!userId) {
+        return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
+      }
+
+      const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
+      if (!ranks || ranks.length === 0) {
+        return interaction.editReply({ content: '❌ Could not retrieve ranks from the Roblox group. Please check the group ID and bot permissions.' });
+      }
 
       // Build dropdown menu for ranks
       const { ActionRowBuilder, StringSelectMenuBuilder } = await import('discord.js');
@@ -98,7 +109,7 @@ client.on('interactionCreate', async interaction => {
         );
       const row = new ActionRowBuilder().addComponents(rankMenu);
 
-      await interaction.editReply({ content: `Select a rank for **${username}**:`, components: [row], ephemeral: true });
+      await interaction.editReply({ content: `Select a rank for **${username}**:`, components: [row] });
 
       // Create a collector to wait for a selection
       const collector = interaction.channel.createMessageComponentCollector({
@@ -109,18 +120,15 @@ client.on('interactionCreate', async interaction => {
 
       collector.on('collect', async i => {
         try {
-          const selectedRankId = parseInt(i.values[0]);
-          const userId = await noblox.getIdFromUsername(username);
+          // Acknowledge the interaction to prevent timeout errors
+          await i.deferUpdate();
 
-          // Check if the Roblox user exists
-          if (!userId) {
-            await i.update({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.`, components: [] });
-            return;
-          }
+          const selectedRankId = parseInt(i.values[0]);
 
           // Set the rank in the Roblox group
           await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, selectedRankId);
-          await i.update({ content: `✅ **${username}** has been ranked successfully.`, components: [] });
+
+          await i.editReply({ content: `✅ **${username}** has been ranked successfully.`, components: [] });
 
           // Send a log message to a specific channel if LOGS_CHANNEL_ID is set
           const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
@@ -129,26 +137,28 @@ client.on('interactionCreate', async interaction => {
           }
         } catch (err) {
           console.error('❌ Error during rank change:', err);
-          await i.update({ content: `❌ An error occurred while trying to rank the user. Please try again.`, components: [] });
+          await i.editReply({ content: `❌ An error occurred while trying to rank the user. Please try again. Make sure the Roblox user is in the group and that the bot has permission to set the rank.` });
         }
         collector.stop();
       });
 
       collector.on('end', collected => {
         if (collected.size === 0) {
+          // The user didn't select a rank within the time limit
           interaction.editReply({ content: '⏰ Command timed out. Please try again.', components: [] });
         }
       });
 
     } catch (err) {
       console.error('❌ Error in rank command:', err);
-      await interaction.editReply({ content: `❌ Failed to retrieve Roblox group ranks. Please check the ROBLOX_GROUP_ID.`, components: [] });
+      // If any error occurs before the collector, edit the initial deferred reply
+      await interaction.editReply({ content: `❌ An unexpected error occurred. Please try again later. Make sure the username is correct and the bot has permissions in the Roblox group.` });
     }
   }
 });
 
 // Initialize the bot
-client.once('ready', async () => {
+client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   await loginRoblox();
   await registerCommands();
