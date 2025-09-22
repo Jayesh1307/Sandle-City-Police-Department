@@ -1,108 +1,114 @@
-// index.js
 import 'dotenv/config';
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder } from 'discord.js';
 import express from 'express';
+import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
+import fs from 'fs';
+import path from 'path';
 import noblox from 'noblox.js';
 
-// ---------- EXPRESS SERVER ----------
+// Environment variables
+const {
+  DISCORD_TOKEN,
+  ALLOWED_ROLE,
+  GUILD_ID,
+  LOGS_CHANNEL_ID,
+  ROBLOX_COOKIE,
+  PORT = 3000
+} = process.env;
+
+// Express server to keep bot alive
 const app = express();
-const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot is online!'));
+app.get('/', (req, res) => res.send('Bot is running!'));
 app.listen(PORT, () => console.log(`Express server running on port ${PORT}`));
 
-// ---------- DISCORD BOT ----------
+// Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Roblox login
+// Login to Roblox
 async function loginRoblox() {
-    try {
-        await noblox.setCookie(process.env.ROBLOX_COOKIE);
-        console.log('✅ Logged into Roblox');
-    } catch (err) {
-        console.error('❌ Failed to log in to Roblox:', err);
-    }
+  try {
+    await noblox.setCookie(ROBLOX_COOKIE); // v6+ uses setCookie
+    const currentUser = await noblox.getCurrentUser();
+    console.log(`✅ Logged into Roblox as ${currentUser.UserName}`);
+  } catch (err) {
+    console.error('❌ Failed to log in to Roblox:', err);
+  }
 }
 
-// Fetch group ranks for dropdown
-async function getGroupRanks() {
-    const ranks = await noblox.getRoles(process.env.GROUP_ID);
-    return ranks.map(r => ({ label: r.name, value: r.rank.toString() }));
-}
-
-// Register slash command
-const commands = [
-    new SlashCommandBuilder()
-        .setName('rank')
-        .setDescription('Assign a rank to a Roblox user')
-        .addStringOption(option =>
-            option.setName('username')
-                .setDescription('Roblox username')
-                .setRequired(true))
-].map(command => command.toJSON());
-
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-
+// Register commands
 async function registerCommands() {
-    try {
-        await rest.put(
-            Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-            { body: commands }
-        );
-        console.log('✅ Slash commands registered.');
-    } catch (err) {
-        console.error('❌ Error registering commands:', err);
-    }
+  const commands = [];
+
+  // /rank command structure
+  commands.push({
+    name: 'rank',
+    description: 'Assign a rank to a Roblox user',
+    options: [
+      {
+        name: 'username',
+        type: 3, // STRING
+        description: 'Roblox username',
+        required: true
+      }
+    ]
+  });
+
+  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+      { body: commands }
+    );
+    console.log('✅ Slash commands registered.');
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 // Handle interactions
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand() && !interaction.isStringSelectMenu()) return;
-
-    // Check role
-    if (interaction.member && !interaction.member.roles.cache.has(process.env.ALLOWED_ROLE)) {
-        await interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
-        return;
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName === 'rank') {
+    // Permission check
+    if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
+      return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
-    if (interaction.isChatInputCommand() && interaction.commandName === 'rank') {
-        const username = interaction.options.getString('username');
+    const username = interaction.options.getString('username');
+    const ranks = await noblox.getRoles(parseInt(GUILD_ID));
 
-        // Get ranks dropdown
-        const rankOptions = await getGroupRanks();
-        const row = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId(`rank_select_${username}`)
-                .setPlaceholder('Select a rank')
-                .addOptions(rankOptions)
-        );
+    // Build dropdown
+    const { ActionRowBuilder, StringSelectMenuBuilder } = await import('discord.js');
+    const rankMenu = new StringSelectMenuBuilder()
+      .setCustomId('rank_select')
+      .setPlaceholder('Select rank')
+      .addOptions(
+        ranks.map(r => ({ label: r.name, value: r.rank.toString() }))
+      );
+    const row = new ActionRowBuilder().addComponents(rankMenu);
 
-        await interaction.reply({ content: `Select a rank for **${username}**:`, components: [row], ephemeral: true });
-    }
+    await interaction.reply({ content: `Select a rank for **${username}**:`, components: [row], ephemeral: true });
 
-    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('rank_select_')) {
-        const username = interaction.customId.replace('rank_select_', '');
-        const rank = parseInt(interaction.values[0]);
-
+    const collector = interaction.channel.createMessageComponentCollector({ componentType: 3, time: 15000 });
+    collector.on('collect', async i => {
+      if (i.customId === 'rank_select') {
+        const rankId = parseInt(i.values[0]);
         try {
-            const userId = await noblox.getIdFromUsername(username);
-            await noblox.setRank(process.env.GROUP_ID, userId, rank);
-
-            await interaction.update({ content: `✅ Successfully set **${username}** to rank **${rank}**`, components: [] });
-
-            // Log the action
-            const logChannel = await client.channels.fetch(process.env.LOGS_CHANNEL_ID);
-            logChannel.send(`**${interaction.user.tag}** set **${username}** to rank **${rank}**`);
+          const userId = await noblox.getIdFromUsername(username);
+          await noblox.setRank(parseInt(GUILD_ID), userId, rankId);
+          await i.update({ content: `✅ **${username}** has been ranked successfully.`, components: [] });
         } catch (err) {
-            console.error(err);
-            await interaction.update({ content: `❌ Failed to assign rank. Make sure Roblox usernames are correct.`, components: [] });
+          await i.update({ content: `❌ Failed to assign rank. Make sure the username is correct.`, components: [] });
         }
-    }
+      }
+    });
+  }
 });
 
-// Start bot
-client.once('clientReady', async () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
-    await loginRoblox();
+// Initialize
+client.once('ready', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  await loginRoblox();
+  await registerCommands();
 });
-registerCommands();
-client.login(process.env.DISCORD_TOKEN);
+
+client.login(DISCORD_TOKEN);
