@@ -43,6 +43,18 @@ async function loginRoblox() {
 
 // Register slash commands with Discord
 async function registerCommands() {
+  // First, get the rank information from Roblox
+  const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
+  if (!ranks) {
+    console.error('❌ Could not retrieve ranks from the Roblox group. Please check the group ID and bot permissions.');
+    process.exit(1);
+  }
+
+  // Create an array of choices for the Discord command, filtering out the guest rank
+  const rankChoices = ranks
+    .filter(r => r.rank > 0)
+    .map(r => ({ name: r.name, value: r.rank }));
+
   const commands = [
     {
       name: 'rank',
@@ -55,10 +67,11 @@ async function registerCommands() {
           required: true
         },
         {
-          name: 'rank_number',
+          name: 'rank',
           type: 4, // INTEGER
-          description: 'The Roblox rank ID (number) to assign',
-          required: true
+          description: 'The Roblox rank to assign',
+          required: true,
+          choices: rankChoices
         }
       ]
     }
@@ -88,11 +101,10 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
-    // Defer the reply to avoid a timeout
     await interaction.deferReply();
 
     const username = interaction.options.getString('username');
-    const rankNumber = interaction.options.getInteger('rank_number');
+    const rankNumber = interaction.options.getInteger('rank');
 
     try {
       const userId = await noblox.getIdFromUsername(username);
@@ -101,22 +113,24 @@ client.on('interactionCreate', async interaction => {
         return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
       }
 
+      const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
+      const selectedRank = ranks.find(r => r.rank === rankNumber);
+      const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
+
       await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankNumber);
 
-      const successMessage = `✅ **${username}** has been ranked to rank ID **${rankNumber}** successfully.`;
+      const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
       await interaction.editReply({ content: successMessage });
 
-      // Send a log message to a specific channel if LOGS_CHANNEL_ID is set
       const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
       if (logsChannel) {
-        logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to rank ID **${rankNumber}**.`);
+        logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to **${selectedRankName}**.`);
       }
 
     } catch (err) {
       console.error('❌ Error during rank change:', err);
       let errorMessage = '❌ An unexpected error occurred. Please try again.';
 
-      // Check for specific common errors
       if (err.message.includes('No group with the ID')) {
         errorMessage = '❌ Failed to find the Roblox group. Please check the `ROBLOX_GROUP_ID`.';
       } else if (err.message.includes('Authorization has been denied for this request.')) {
