@@ -1,98 +1,65 @@
-// index.js
 import 'dotenv/config';
-import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
-import express from 'express';
+import { Client, GatewayIntentBits, Collection } from 'discord.js';
+import fs from 'fs';
+import path from 'path';
 import noblox from 'noblox.js';
+import express from 'express';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.get('/', (req, res) => res.send('Bot is running!'));
-app.listen(PORT, () => console.log(`Express server running on port ${PORT}`));
-
-// Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+client.commands = new Collection();
 
-// Allowed Discord role IDs for using rank commands
-const ALLOWED_ROLE_IDS = [process.env.ADMIN_ROLE_ID]; // add your role ID here
+// Load slash commands
+const commandsPath = path.join('./commands'); // your commands folder
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+for (const file of commandFiles) {
+  const filePath = path.join(commandsPath, file);
+  const command = await import(filePath);
+  client.commands.set(command.data.name, command);
+}
 
-// Login to Roblox
+// Express server to keep bot online
+const app = express();
+app.get('/', (req, res) => res.send('Bot is running'));
+app.listen(process.env.PORT || 3000, () => console.log('Express server running'));
+
+// Discord ready event
+client.once('clientReady', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+});
+
+// Roblox login
 async function loginRoblox() {
   try {
-    const currentUser = await noblox.setCookie(process.env.ROBLOX_COOKIE);
-    console.log('✅ Logged into Roblox as:', currentUser.UserName);
+    await noblox.cookieLogin(process.env.ROBLOX_COOKIE);
+    console.log('✅ Logged into Roblox');
   } catch (err) {
     console.error('❌ Failed to log in to Roblox:', err);
   }
 }
+await loginRoblox();
 
-// Register slash commands
-const commands = [
-  {
-    name: 'rank',
-    description: 'Assign a Roblox rank to a user',
-    options: [
-      {
-        name: 'username',
-        type: 3, // STRING
-        description: 'Roblox username',
-        required: true,
-      },
-      {
-        name: 'rank',
-        type: 4, // INTEGER
-        description: 'Roblox rank ID',
-        required: true,
-      },
-    ],
-  },
-];
-
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-
-async function registerCommands() {
-  try {
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-    console.log('✅ Slash commands registered.');
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-client.on('clientReady', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  await loginRoblox();
-});
-
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  const memberRoles = interaction.member.roles.cache;
-  const isAllowed = ALLOWED_ROLE_IDS.some((roleId) => memberRoles.has(roleId));
-  if (!isAllowed) {
-    await interaction.reply({ content: '❌ You do not have permission to use this command.', ephemeral: true });
-    return;
-  }
-
-  if (interaction.commandName === 'rank') {
-    const username = interaction.options.getString('username');
-    const rankId = interaction.options.getInteger('rank');
-
-    await interaction.deferReply({ ephemeral: true });
-
+// Interaction handler
+client.on('interactionCreate', async interaction => {
+  if (interaction.isChatInputCommand()) {
+    const command = client.commands.get(interaction.commandName);
+    if (!command) return;
     try {
-      const userId = await noblox.getIdFromUsername(username);
-      await noblox.setRank(process.env.GROUP_ID, userId, rankId);
-      await interaction.editReply(`✅ Successfully set rank of **${username}** to ${rankId}.`);
+      await command.execute(interaction);
     } catch (err) {
       console.error(err);
-      await interaction.editReply('❌ Failed to assign rank. Make sure Roblox usernames are correct.');
+      await interaction.reply({ content: 'There was an error executing that command.', ephemeral: true });
+    }
+  }
+
+  // Handle rank dropdown interaction
+  if (interaction.isStringSelectMenu()) {
+    const command = client.commands.get('rank'); // your rank command
+    if (command && command.executeSelectMenu) {
+      await command.executeSelectMenu(interaction);
     }
   }
 });
 
-// Start Discord bot
 client.login(process.env.DISCORD_TOKEN);
 
-// Suppress deprecation warnings
-noblox.setOptions({ show_deprecation_warnings: false });
+export default client;
