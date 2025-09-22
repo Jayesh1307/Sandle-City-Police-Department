@@ -1,86 +1,99 @@
-import { Client, GatewayIntentBits, SlashCommandBuilder, Routes, REST, ActionRowBuilder, StringSelectMenuBuilder } from 'discord.js';
+// index.js
 import 'dotenv/config';
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import noblox from 'noblox.js';
+import express from 'express';
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Roblox login
+// ===== EXPRESS SERVER =====
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Bot is running'));
+app.listen(PORT, () => console.log(`Express server running on port ${PORT}`));
+
+// ===== LOGIN TO ROBLOX =====
 async function loginRoblox() {
     try {
         await noblox.cookieLogin(process.env.ROBLOX_COOKIE);
-        console.log('✅ Logged in to Roblox!');
+        console.log('✅ Logged into Roblox');
     } catch (err) {
         console.error('❌ Failed to log in to Roblox:', err);
     }
 }
 
-// Sync Discord slash commands
+// ===== FETCH GROUP RANKS =====
+async function getGroupRanks() {
+    const ranks = await noblox.getRoles(process.env.GROUP_ID);
+    return ranks.map(r => ({ name: r.name, value: r.rank }));
+}
+
+// ===== REGISTER SLASH COMMANDS =====
 async function registerCommands() {
+    const ranks = await getGroupRanks();
     const commands = [
         new SlashCommandBuilder()
             .setName('rank')
-            .setDescription('Promote or demote a user in the Roblox group')
-            .addUserOption(option => 
-                option.setName('target')
-                    .setDescription('The Roblox account to change rank')
-                    .setRequired(true))
-            .addStringOption(option => 
-                option.setName('rank')
-                    .setDescription('Select the rank to assign')
-                    .setRequired(true))
+            .setDescription('Promote/demote user in Roblox group')
+            .addUserOption(opt => opt.setName('target').setDescription('User to change rank').setRequired(true))
+            .addStringOption(opt => 
+                opt.setName('rank')
+                   .setDescription('Select the rank')
+                   .setRequired(true)
+                   .addChoices(...ranks.map(r => ({ name: r.name, value: r.value.toString() })))
+            )
             .toJSON()
     ];
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    await rest.put(
-        Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-        { body: commands }
-    );
-
-    console.log('✅ Slash commands registered.');
+    await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID), { body: commands });
+    console.log('✅ Slash commands registered');
 }
 
-// Get Roblox group ranks for dropdown
-async function getGroupRanks() {
-    const ranks = await noblox.getRoles(process.env.GROUP_ID);
-    return ranks.map(r => ({ label: r.name, value: r.rank.toString() }));
-}
-
-// Handle /rank command
+// ===== HANDLE SLASH COMMANDS =====
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'rank') {
-        const targetUser = interaction.options.getUser('target');
-        const rankValue = parseInt(interaction.options.getString('rank'));
-
-        // Check Discord role rank permission
-        const memberRank = await noblox.getRank(parseInt(process.env.GROUP_ID), interaction.user.id);
-        if (rankValue >= memberRank) {
-            return interaction.reply({ content: '❌ You cannot promote to a rank equal or higher than your own.', ephemeral: true });
-        }
+        const target = interaction.options.getUser('target');
+        const rankValue = parseInt(interaction.options.getString('rank'), 10);
 
         try {
-            const targetRobloxId = await noblox.getIdFromUsername(targetUser.username);
-            await noblox.setRank(process.env.GROUP_ID, targetRobloxId, rankValue);
+            const callerId = await noblox.getIdFromUsername(interaction.user.username);
+            const callerRank = await noblox.getRankInGroup(process.env.GROUP_ID, callerId);
 
-            interaction.reply(`✅ Successfully set ${targetUser.username}'s rank to ${rankValue}`);
+            if (callerRank <= rankValue) {
+                return interaction.reply({ content: '❌ You cannot promote/demote to a rank equal or above yours!', ephemeral: true });
+            }
 
-            // Log in your logs channel
+            const targetId = await noblox.getIdFromUsername(target.username);
+            const targetRank = await noblox.getRankInGroup(process.env.GROUP_ID, targetId);
+
+            if (rankValue >= callerRank) {
+                return interaction.reply({ content: '❌ You cannot set a rank higher than your own!', ephemeral: true });
+            }
+
+            await noblox.setRank(process.env.GROUP_ID, targetId, rankValue);
+
+            // Send success message
+            await interaction.reply(`✅ ${target.username} has been set to rank ${rankValue}`);
+
+            // Log to Discord
             const logChannel = await client.channels.fetch(process.env.LOGS_CHANNEL_ID);
-            logChannel.send(`**${interaction.user.tag}** promoted/demoted **${targetUser.tag}** to rank **${rankValue}**`);
+            logChannel.send(`📢 **Rank Change:** ${interaction.user.tag} set ${target.username} to rank ${rankValue}`);
         } catch (err) {
             console.error(err);
-            interaction.reply({ content: '❌ Failed to set rank. Make sure the user exists in Roblox group.', ephemeral: true });
+            interaction.reply({ content: '❌ An error occurred while changing the rank.', ephemeral: true });
         }
     }
 });
 
-// Start bot
+// ===== READY EVENT =====
 client.once('ready', async () => {
-    console.log(`Logged in as ${client.user.tag}`);
+    console.log(`✅ Logged in as ${client.user.tag}`);
     await loginRoblox();
     await registerCommands();
 });
 
+// ===== LOGIN TO DISCORD =====
 client.login(process.env.DISCORD_TOKEN);
