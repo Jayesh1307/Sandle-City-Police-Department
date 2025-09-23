@@ -37,48 +37,64 @@ async function loginRoblox() {
   } catch (err) {
     console.error('❌ Failed to log in to Roblox. Check your ROBLOX_COOKIE and ensure it is valid.');
     console.error(err);
-    process.exit(1); 
+    process.exit(1);
   }
 }
 
 // Register slash commands with Discord
 async function registerCommands() {
-  // First, get the rank information from Roblox
-  const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
-  if (!ranks) {
-    console.error('❌ Could not retrieve ranks from the Roblox group. Please check the group ID and bot permissions.');
-    process.exit(1);
+  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+
+  try {
+    console.log('🔄 Clearing existing application (/) commands.');
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+      { body: [] }
+    );
+    console.log('✅ Successfully cleared all application (/) commands.');
+  } catch (err) {
+    console.error('❌ Failed to clear slash commands.');
+    console.error(err);
+    // Continue to register commands even if clearing fails
   }
 
-  // Create an array of choices for the Discord command, filtering out the guest rank
-  const rankChoices = ranks
-    .filter(r => r.rank > 0)
-    .map(r => ({ name: r.name, value: r.rank }));
-
-  const commands = [
-    {
-      name: 'rank',
-      description: 'Assign a rank to a Roblox user',
-      options: [
-        {
-          name: 'username',
-          type: 3, // STRING
-          description: 'The Roblox username to rank',
-          required: true
-        },
-        {
-          name: 'rank',
-          type: 4, // INTEGER
-          description: 'The Roblox rank to assign',
-          required: true,
-          choices: rankChoices
-        }
-      ]
-    }
-  ];
-
-  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+  // Now, register the new commands
   try {
+    // First, get the rank information from Roblox
+    const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
+    if (!ranks) {
+      console.error('❌ Could not retrieve ranks from the Roblox group. Please check the group ID and bot permissions.');
+      process.exit(1);
+    }
+
+    // Create an array of choices for the Discord command
+    // We filter out the guest rank (rank 0) and use the 'id' for the value
+    const rankChoices = ranks
+      .filter(r => r.rank > 0)
+      .map(r => ({ name: r.name, value: r.id })); // ⚠️ CHANGED from r.rank to r.id ⚠️
+
+    const commands = [
+      {
+        name: 'rank',
+        description: 'Assign a rank to a Roblox user',
+        options: [
+          {
+            name: 'username',
+            type: 3, // STRING
+            description: 'The Roblox username to rank',
+            required: true
+          },
+          {
+            name: 'rank',
+            type: 4, // INTEGER
+            description: 'The Roblox rank to assign',
+            required: true,
+            choices: rankChoices
+          }
+        ]
+      }
+    ];
+
     console.log('🔄 Started refreshing application (/) commands.');
     await rest.put(
       Routes.applicationGuildCommands(client.user.id, GUILD_ID),
@@ -104,7 +120,7 @@ client.on('interactionCreate', async interaction => {
     await interaction.deferReply();
 
     const username = interaction.options.getString('username');
-    const rankNumber = interaction.options.getInteger('rank');
+    const rankId = interaction.options.getInteger('rank'); // ⚠️ CHANGED from rankNumber to rankId ⚠️
 
     try {
       const userId = await noblox.getIdFromUsername(username);
@@ -114,10 +130,10 @@ client.on('interactionCreate', async interaction => {
       }
 
       const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
-      const selectedRank = ranks.find(r => r.rank === rankNumber);
+      const selectedRank = ranks.find(r => r.id === rankId); // ⚠️ CHANGED from r.rank to r.id ⚠️
       const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
 
-      await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankNumber);
+      await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankId); // ⚠️ CHANGED from rankNumber to rankId ⚠️
 
       const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
       await interaction.editReply({ content: successMessage });
