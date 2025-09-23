@@ -168,3 +168,64 @@ client.once('clientReady', async () => {
 });
 
 client.login(DISCORD_TOKEN);
+// Handle Discord interactions
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'rank') {
+    // Permission check
+    if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
+      return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
+    }
+
+    // Defer the reply immediately to prevent the "application did not respond" error
+    await interaction.deferReply();
+
+    const username = interaction.options.getString('username');
+    const rankId = interaction.options.getInteger('rank');
+
+    try {
+      const userId = await noblox.getIdFromUsername(username);
+
+      if (!userId) {
+        return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
+      }
+
+      // Check if the user is in the group before attempting to rank them
+      const userInGroup = await noblox.getRankInGroup(parseInt(ROBLOX_GROUP_ID), userId);
+      if (userInGroup === -1) {
+          return interaction.editReply({ content: `❌ Roblox user **${username}** is not in the group.` });
+      }
+
+      const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
+      const selectedRank = ranks.find(r => r.id === rankId);
+      const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
+
+      await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankId);
+
+      const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
+      await interaction.editReply({ content: successMessage });
+
+      const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
+      if (logsChannel) {
+        logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to **${selectedRankName}**.`);
+      }
+
+    } catch (err) {
+      console.error('❌ An unexpected error occurred during command execution:', err);
+      let errorMessage = '❌ An unexpected error occurred. Please try again.';
+
+      if (err.message.includes('No group with the ID')) {
+        errorMessage = '❌ Failed to find the Roblox group. Please check the `ROBLOX_GROUP_ID`.';
+      } else if (err.message.includes('Authorization has been denied for this request.')) {
+        errorMessage = '❌ Failed to set rank. The bot\'s Roblox account may not have permission, or its rank is too low.';
+      } else if (err.message.includes('The specified rank is not a valid rank')) {
+        errorMessage = '❌ The provided rank is not a valid rank in the group.';
+      } else if (err.message.includes('Request failed with status code 500') || err.message.includes('Request failed with status code 503')) {
+          errorMessage = '❌ The Roblox API is currently unavailable. Please try again later.';
+      }
+
+      await interaction.editReply({ content: errorMessage }).catch(e => console.error('Failed to send error reply:', e));
+    }
+  }
+});
