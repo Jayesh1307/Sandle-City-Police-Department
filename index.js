@@ -55,23 +55,19 @@ async function registerCommands() {
   } catch (err) {
     console.error('❌ Failed to clear slash commands.');
     console.error(err);
-    // Continue to register commands even if clearing fails
   }
 
   // Now, register the new commands
   try {
-    // First, get the rank information from Roblox
     const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
     if (!ranks) {
       console.error('❌ Could not retrieve ranks from the Roblox group. Please check the group ID and bot permissions.');
       process.exit(1);
     }
 
-    // Create an array of choices for the Discord command
-    // We filter out the guest rank (rank 0) and use the 'id' for the value
     const rankChoices = ranks
       .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.id })); // ⚠️ CHANGED from r.rank to r.id ⚠️
+      .map(r => ({ name: r.name, value: r.id })); // Use 'r.id' for roleset ID
 
     const commands = [
       {
@@ -92,7 +88,13 @@ async function registerCommands() {
             choices: rankChoices
           }
         ]
+      },
+      // === ADDED: Ping Command ===
+      {
+        name: 'ping',
+        description: 'Checks the bot\'s latency.'
       }
+      // ===========================
     ];
 
     console.log('🔄 Started refreshing application (/) commands.');
@@ -111,66 +113,12 @@ async function registerCommands() {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === 'rank') {
-    // Permission check
-    if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
-      return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
-    }
-
-    await interaction.deferReply();
-
-    const username = interaction.options.getString('username');
-    const rankId = interaction.options.getInteger('rank'); // ⚠️ CHANGED from rankNumber to rankId ⚠️
-
-    try {
-      const userId = await noblox.getIdFromUsername(username);
-
-      if (!userId) {
-        return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
-      }
-
-      const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
-      const selectedRank = ranks.find(r => r.id === rankId); // ⚠️ CHANGED from r.rank to r.id ⚠️
-      const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
-
-      await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankId); // ⚠️ CHANGED from rankNumber to rankId ⚠️
-
-      const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
-      await interaction.editReply({ content: successMessage });
-
-      const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
-      if (logsChannel) {
-        logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to **${selectedRankName}**.`);
-      }
-
-    } catch (err) {
-      console.error('❌ Error during rank change:', err);
-      let errorMessage = '❌ An unexpected error occurred. Please try again.';
-
-      if (err.message.includes('No group with the ID')) {
-        errorMessage = '❌ Failed to find the Roblox group. Please check the `ROBLOX_GROUP_ID`.';
-      } else if (err.message.includes('Authorization has been denied for this request.')) {
-        errorMessage = '❌ Failed to set rank. The bot\'s Roblox account may not have permission, or its rank is too low.';
-      } else if (err.message.includes('The specified rank is not a valid rank')) {
-        errorMessage = '❌ The provided rank ID is not a valid rank in the group.';
-      }
-
-      await interaction.editReply({ content: errorMessage });
-    }
+  // === ADDED: Ping Command Handler ===
+  if (interaction.commandName === 'ping') {
+    const latency = Date.now() - interaction.createdTimestamp;
+    return interaction.reply({ content: `Pong! My latency is ${latency}ms.`, ephemeral: true });
   }
-});
-
-// Initialize the bot
-client.once('clientReady', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  await loginRoblox();
-  await registerCommands();
-});
-
-client.login(DISCORD_TOKEN);
-// Handle Discord interactions
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
+  // ===========================
 
   if (interaction.commandName === 'rank') {
     // Permission check
@@ -178,7 +126,6 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
-    // Defer the reply immediately to prevent the "application did not respond" error
     await interaction.deferReply();
 
     const username = interaction.options.getString('username');
@@ -190,8 +137,7 @@ client.on('interactionCreate', async interaction => {
       if (!userId) {
         return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
       }
-
-      // Check if the user is in the group before attempting to rank them
+      
       const userInGroup = await noblox.getRankInGroup(parseInt(ROBLOX_GROUP_ID), userId);
       if (userInGroup === -1) {
           return interaction.editReply({ content: `❌ Roblox user **${username}** is not in the group.` });
@@ -229,3 +175,12 @@ client.on('interactionCreate', async interaction => {
     }
   }
 });
+
+// Initialize the bot
+client.once('clientReady', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  await loginRoblox();
+  await registerCommands();
+});
+
+client.login(DISCORD_TOKEN);
