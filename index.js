@@ -26,6 +26,7 @@ app.get('/', (req, res) => res.send('Bot is running!'));
 app.listen(PORT, () => console.log(`Express server running on port ${PORT}`));
 
 // Discord client
+// We explicitly enable partials to ensure all Discord features work correctly
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 // Login to Roblox
@@ -65,9 +66,10 @@ async function registerCommands() {
       process.exit(1);
     }
 
+    // FIX: Use 'r.id' for roleset ID
     const rankChoices = ranks
       .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.id })); // Use 'r.id' for roleset ID
+      .map(r => ({ name: r.name, value: r.id }));
 
     const commands = [
       {
@@ -89,12 +91,10 @@ async function registerCommands() {
           }
         ]
       },
-      // === ADDED: Ping Command ===
       {
         name: 'ping',
         description: 'Checks the bot\'s latency.'
       }
-      // ===========================
     ];
 
     console.log('🔄 Started refreshing application (/) commands.');
@@ -112,53 +112,95 @@ async function registerCommands() {
 // Handle Discord interactions
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+  
+  // CRITICAL LOGGING: Check if any interaction is received
+  console.log(`[DEBUG] Interaction received: ${interaction.commandName}`);
 
-  // === ADDED: Ping Command Handler ===
+  // === /ping COMMAND HANDLER ===
   if (interaction.commandName === 'ping') {
-    const latency = Date.now() - interaction.createdTimestamp;
-    return interaction.reply({ content: `Pong! My latency is ${latency}ms.`, ephemeral: true });
-  }
-  // ===========================
+    try {
+      // CRITICAL LOGGING: Check if the deferReply is reached
+      console.log('[DEBUG] PING: Starting deferReply...');
+      await interaction.deferReply({ ephemeral: true });
+      console.log('[DEBUG] PING: deferReply successful.');
 
+      const latency = Date.now() - interaction.createdTimestamp;
+      
+      // CRITICAL LOGGING: Check if the editReply is reached
+      console.log('[DEBUG] PING: Starting editReply...');
+      await interaction.editReply({ content: `Pong! My latency is ${latency}ms.`, ephemeral: true });
+      console.log('[DEBUG] PING: editReply successful. Command finished.');
+      
+    } catch (err) {
+      // CRITICAL LOGGING: Catch ANY error during PING execution
+      console.error('❌ PING COMMAND CRASHED:', err);
+    }
+    return; // Stop execution after ping command
+  }
+  // =============================
+
+  // === /rank COMMAND HANDLER ===
   if (interaction.commandName === 'rank') {
+    // CRITICAL LOGGING: Check if rank handler is reached
+    console.log('[DEBUG] RANK: Rank handler reached.');
+
     // Permission check
     if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
       return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
-    await interaction.deferReply();
-
-    const username = interaction.options.getString('username');
-    const rankId = interaction.options.getInteger('rank');
-
     try {
+      // CRITICAL LOGGING: Check if the deferReply is reached
+      console.log('[DEBUG] RANK: Starting deferReply...');
+      await interaction.deferReply();
+      console.log('[DEBUG] RANK: deferReply successful.');
+
+      const username = interaction.options.getString('username');
+      const rankId = interaction.options.getInteger('rank');
+
+      // CRITICAL LOGGING: Starting noblox calls
+      console.log('[DEBUG] RANK: Starting noblox.getIdFromUsername...');
       const userId = await noblox.getIdFromUsername(username);
+      console.log(`[DEBUG] RANK: Received UserId: ${userId}`);
 
       if (!userId) {
         return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
       }
-      
+
+      // Check if the user is in the group before attempting to rank them
+      console.log('[DEBUG] RANK: Starting noblox.getRankInGroup...');
       const userInGroup = await noblox.getRankInGroup(parseInt(ROBLOX_GROUP_ID), userId);
+      console.log(`[DEBUG] RANK: User rank in group: ${userInGroup}`);
+
       if (userInGroup === -1) {
-          return interaction.editReply({ content: `❌ Roblox user **${username}** is not in the group.` });
+        return interaction.editReply({ content: `❌ Roblox user **${username}** is not in the group.` });
       }
 
+      console.log('[DEBUG] RANK: Starting noblox.getRoles...');
       const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
       const selectedRank = ranks.find(r => r.id === rankId);
       const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
+      console.log(`[DEBUG] RANK: Target Rank Name: ${selectedRankName}, ID: ${rankId}`);
 
+      // Final rank operation
+      console.log('[DEBUG] RANK: Starting noblox.setRank...');
       await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankId);
+      console.log('[DEBUG] RANK: noblox.setRank successful.');
 
       const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
       await interaction.editReply({ content: successMessage });
 
+      // Log to internal channel
       const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
       if (logsChannel) {
         logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to **${selectedRankName}**.`);
       }
 
+      console.log('[DEBUG] RANK: Command finished successfully.');
+
     } catch (err) {
-      console.error('❌ An unexpected error occurred during command execution:', err);
+      // Robust Error Handling for the user and console
+      console.error('❌ AN UNEXPECTED CRASH OCCURRED DURING RANK COMMAND:', err);
       let errorMessage = '❌ An unexpected error occurred. Please try again.';
 
       if (err.message.includes('No group with the ID')) {
@@ -168,10 +210,10 @@ client.on('interactionCreate', async interaction => {
       } else if (err.message.includes('The specified rank is not a valid rank')) {
         errorMessage = '❌ The provided rank is not a valid rank in the group.';
       } else if (err.message.includes('Request failed with status code 500') || err.message.includes('Request failed with status code 503')) {
-          errorMessage = '❌ The Roblox API is currently unavailable. Please try again later.';
+        errorMessage = '❌ The Roblox API is currently unavailable. Please try again later.';
       }
 
-      await interaction.editReply({ content: errorMessage }).catch(e => console.error('Failed to send error reply:', e));
+      await interaction.editReply({ content: errorMessage }).catch(e => console.error('Failed to send error reply after crash:', e));
     }
   }
 });
@@ -179,8 +221,12 @@ client.on('interactionCreate', async interaction => {
 // Initialize the bot
 client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+  
+  // Log into Roblox and register commands on clientReady
   await loginRoblox();
   await registerCommands();
+  
+  console.log(`✅ Bot initialization complete.`);
 });
 
 client.login(DISCORD_TOKEN);
