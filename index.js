@@ -10,7 +10,7 @@ const {
   GatewayIntentBits, 
   REST, 
   Routes
-} = discord; // Removed InteractionResponseFlags from here!
+} = discord; // InteractionResponseFlags is accessed directly via 'discord.InteractionResponseFlags'
 
 // Environment variables
 const {
@@ -74,7 +74,7 @@ async function registerCommands() {
 
     const rankChoices = ranks
       .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.id })); 
+      .map(r => ({ name: r.name, value: r.id })); // FIX: Using roleset ID (r.id)
 
     const commands = [
       {
@@ -120,10 +120,10 @@ client.on('interactionCreate', async interaction => {
   
   console.log(`[DEBUG] Interaction received: ${interaction.commandName}`);
 
-  // === /ping COMMAND HANDLER (FIXED) ===
+  // === /ping COMMAND HANDLER (FIXED CRASH) ===
   if (interaction.commandName === 'ping') {
     try {
-      // FIX: Accessing Ephemeral flag via the 'discord' namespace
+      // FIX: Accessing the Ephemeral flag via the 'discord' namespace
       console.log('[DEBUG] PING: Starting deferReply with flags...');
       await interaction.deferReply({ flags: discord.InteractionResponseFlags.Ephemeral });
       console.log('[DEBUG] PING: deferReply successful.');
@@ -135,6 +135,7 @@ client.on('interactionCreate', async interaction => {
       console.log('[DEBUG] PING: editReply successful. Command finished.');
       
     } catch (err) {
+      // This will now only catch true runtime errors, not the TypeError we fixed
       console.error('❌ PING COMMAND CRASHED:', err);
     }
     return;
@@ -147,7 +148,6 @@ client.on('interactionCreate', async interaction => {
 
     // Permission check
     if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
-      // FIX: Using ephemeral: true as a fallback for now, as it's the fastest option for non-flag replies
       return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
