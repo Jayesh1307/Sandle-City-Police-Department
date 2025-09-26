@@ -20,16 +20,14 @@ if (!DISCORD_TOKEN || !GUILD_ID || !ROBLOX_COOKIE || !ROBLOX_GROUP_ID) {
   process.exit(1);
 }
 
-// Express server to keep bot alive for hosting services like UptimeRobot
+// Express server setup for UptimeRobot
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running!'));
-app.listen(PORT, () => console.log(`Express server running on port ${PORT}`));
 
 // Discord client
-// We explicitly enable partials to ensure all Discord features work correctly
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Login to Roblox
+// Login to Roblox (Function remains the same)
 async function loginRoblox() {
   try {
     await noblox.setCookie(ROBLOX_COOKIE);
@@ -42,7 +40,7 @@ async function loginRoblox() {
   }
 }
 
-// Register slash commands with Discord
+// Register slash commands (Function remains the same)
 async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
@@ -58,7 +56,6 @@ async function registerCommands() {
     console.error(err);
   }
 
-  // Now, register the new commands
   try {
     const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
     if (!ranks) {
@@ -66,10 +63,9 @@ async function registerCommands() {
       process.exit(1);
     }
 
-    // FIX: Use 'r.id' for roleset ID
     const rankChoices = ranks
       .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.id }));
+      .map(r => ({ name: r.name, value: r.id })); // FIX: Using roleset ID (r.id)
 
     const commands = [
       {
@@ -109,39 +105,34 @@ async function registerCommands() {
   }
 }
 
-// Handle Discord interactions
+// Handle Discord interactions (Includes debug logging and robust error handling)
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   
-  // CRITICAL LOGGING: Check if any interaction is received
   console.log(`[DEBUG] Interaction received: ${interaction.commandName}`);
 
   // === /ping COMMAND HANDLER ===
   if (interaction.commandName === 'ping') {
     try {
-      // CRITICAL LOGGING: Check if the deferReply is reached
       console.log('[DEBUG] PING: Starting deferReply...');
       await interaction.deferReply({ ephemeral: true });
       console.log('[DEBUG] PING: deferReply successful.');
 
       const latency = Date.now() - interaction.createdTimestamp;
       
-      // CRITICAL LOGGING: Check if the editReply is reached
       console.log('[DEBUG] PING: Starting editReply...');
       await interaction.editReply({ content: `Pong! My latency is ${latency}ms.`, ephemeral: true });
       console.log('[DEBUG] PING: editReply successful. Command finished.');
       
     } catch (err) {
-      // CRITICAL LOGGING: Catch ANY error during PING execution
       console.error('❌ PING COMMAND CRASHED:', err);
     }
-    return; // Stop execution after ping command
+    return;
   }
   // =============================
 
   // === /rank COMMAND HANDLER ===
   if (interaction.commandName === 'rank') {
-    // CRITICAL LOGGING: Check if rank handler is reached
     console.log('[DEBUG] RANK: Rank handler reached.');
 
     // Permission check
@@ -150,7 +141,6 @@ client.on('interactionCreate', async interaction => {
     }
 
     try {
-      // CRITICAL LOGGING: Check if the deferReply is reached
       console.log('[DEBUG] RANK: Starting deferReply...');
       await interaction.deferReply();
       console.log('[DEBUG] RANK: deferReply successful.');
@@ -158,7 +148,6 @@ client.on('interactionCreate', async interaction => {
       const username = interaction.options.getString('username');
       const rankId = interaction.options.getInteger('rank');
 
-      // CRITICAL LOGGING: Starting noblox calls
       console.log('[DEBUG] RANK: Starting noblox.getIdFromUsername...');
       const userId = await noblox.getIdFromUsername(username);
       console.log(`[DEBUG] RANK: Received UserId: ${userId}`);
@@ -167,7 +156,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
       }
 
-      // Check if the user is in the group before attempting to rank them
       console.log('[DEBUG] RANK: Starting noblox.getRankInGroup...');
       const userInGroup = await noblox.getRankInGroup(parseInt(ROBLOX_GROUP_ID), userId);
       console.log(`[DEBUG] RANK: User rank in group: ${userInGroup}`);
@@ -182,7 +170,6 @@ client.on('interactionCreate', async interaction => {
       const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
       console.log(`[DEBUG] RANK: Target Rank Name: ${selectedRankName}, ID: ${rankId}`);
 
-      // Final rank operation
       console.log('[DEBUG] RANK: Starting noblox.setRank...');
       await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankId);
       console.log('[DEBUG] RANK: noblox.setRank successful.');
@@ -190,7 +177,6 @@ client.on('interactionCreate', async interaction => {
       const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
       await interaction.editReply({ content: successMessage });
 
-      // Log to internal channel
       const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
       if (logsChannel) {
         logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to **${selectedRankName}**.`);
@@ -199,7 +185,6 @@ client.on('interactionCreate', async interaction => {
       console.log('[DEBUG] RANK: Command finished successfully.');
 
     } catch (err) {
-      // Robust Error Handling for the user and console
       console.error('❌ AN UNEXPECTED CRASH OCCURRED DURING RANK COMMAND:', err);
       let errorMessage = '❌ An unexpected error occurred. Please try again.';
 
@@ -218,15 +203,28 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// Initialize the bot
-client.once('clientReady', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  
-  // Log into Roblox and register commands on clientReady
-  await loginRoblox();
-  await registerCommands();
-  
-  console.log(`✅ Bot initialization complete.`);
+// Initialize the bot logic only after Discord is ready
+client.once('ready', async () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    
+    // Log into Roblox and register commands
+    await loginRoblox();
+    await registerCommands();
+    
+    console.log(`✅ Bot initialization complete.`);
 });
 
-client.login(DISCORD_TOKEN);
+// === CRITICAL FIX FOR 24/7 UPTIME ===
+// Start the Express server first and immediately, then log into Discord.
+app.listen(PORT, async () => {
+    console.log(`Express server running on port ${PORT}`);
+
+    // Now, log into Discord and start the bot logic
+    try {
+        await client.login(DISCORD_TOKEN);
+    } catch (error) {
+        console.error('❌ Failed to log in to Discord. Check DISCORD_TOKEN.', error);
+        process.exit(1);
+    }
+});
+// ===================================
