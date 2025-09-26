@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-// FIX: Correctly import all named exports from 'discord.js' due to CommonJS conflict
+// FIX: Correctly import all named exports from 'discord.js'
 import * as discord from 'discord.js'; 
 import noblox from 'noblox.js'; 
 
@@ -9,9 +9,8 @@ const {
   Client, 
   GatewayIntentBits, 
   REST, 
-  Routes, 
-  InteractionResponseFlags
-} = discord;
+  Routes
+} = discord; // Removed InteractionResponseFlags from here!
 
 // Environment variables
 const {
@@ -75,7 +74,7 @@ async function registerCommands() {
 
     const rankChoices = ranks
       .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.id })); // FIX: Using roleset ID (r.id)
+      .map(r => ({ name: r.name, value: r.id })); 
 
     const commands = [
       {
@@ -121,18 +120,18 @@ client.on('interactionCreate', async interaction => {
   
   console.log(`[DEBUG] Interaction received: ${interaction.commandName}`);
 
-  // === /ping COMMAND HANDLER (Deprecation Warnings FIXED) ===
+  // === /ping COMMAND HANDLER (FIXED) ===
   if (interaction.commandName === 'ping') {
     try {
-      // FIX: Using flags instead of the deprecated 'ephemeral: true'
+      // FIX: Accessing Ephemeral flag via the 'discord' namespace
       console.log('[DEBUG] PING: Starting deferReply with flags...');
-      await interaction.deferReply({ flags: InteractionResponseFlags.Ephemeral });
+      await interaction.deferReply({ flags: discord.InteractionResponseFlags.Ephemeral });
       console.log('[DEBUG] PING: deferReply successful.');
 
       const latency = Date.now() - interaction.createdTimestamp;
       
       console.log('[DEBUG] PING: Starting editReply with flags...');
-      await interaction.editReply({ content: `Pong! My latency is ${latency}ms.`, flags: InteractionResponseFlags.Ephemeral });
+      await interaction.editReply({ content: `Pong! My latency is ${latency}ms.`, flags: discord.InteractionResponseFlags.Ephemeral });
       console.log('[DEBUG] PING: editReply successful. Command finished.');
       
     } catch (err) {
@@ -148,6 +147,7 @@ client.on('interactionCreate', async interaction => {
 
     // Permission check
     if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
+      // FIX: Using ephemeral: true as a fallback for now, as it's the fastest option for non-flag replies
       return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
