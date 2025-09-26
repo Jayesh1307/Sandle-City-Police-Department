@@ -1,8 +1,17 @@
 import 'dotenv/config';
 import express from 'express';
-// FIX: Added InteractionResponseFlags to the import list
-import { Client, GatewayIntentBits, REST, Routes, InteractionResponseFlags } from 'discord.js';
-import noblox from 'noblox.js';
+// FIX: Correctly import all named exports from 'discord.js' due to CommonJS conflict
+import * as discord from 'discord.js'; 
+import noblox from 'noblox.js'; 
+
+// Destructure the Discord exports after the import
+const {
+  Client, 
+  GatewayIntentBits, 
+  REST, 
+  Routes, 
+  InteractionResponseFlags
+} = discord;
 
 // Environment variables
 const {
@@ -66,7 +75,7 @@ async function registerCommands() {
 
     const rankChoices = ranks
       .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.id }));
+      .map(r => ({ name: r.name, value: r.id })); // FIX: Using roleset ID (r.id)
 
     const commands = [
       {
@@ -206,7 +215,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 // Initialize the bot logic only after Discord is ready
-client.once('clientReady', async () => { // FIX: Using 'clientReady' instead of deprecated 'ready'
+client.once('clientReady', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
     
     await loginRoblox();
@@ -215,7 +224,7 @@ client.once('clientReady', async () => { // FIX: Using 'clientReady' instead of 
     console.log(`✅ Bot initialization complete.`);
 });
 
-// === CRITICAL FIX FOR 24/7 UPTIME ===
+// === CRITICAL FIX FOR 24/7 UPTIME (Startup Order) ===
 // Start the Express server first and immediately, then log into Discord.
 app.listen(PORT, async () => {
     console.log(`Express server running on port ${PORT}`);
