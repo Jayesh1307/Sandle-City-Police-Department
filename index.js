@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
-import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
+// FIX: Added InteractionResponseFlags to the import list
+import { Client, GatewayIntentBits, REST, Routes, InteractionResponseFlags } from 'discord.js';
 import noblox from 'noblox.js';
 
 // Environment variables
@@ -65,7 +66,7 @@ async function registerCommands() {
 
     const rankChoices = ranks
       .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.id })); // FIX: Using roleset ID (r.id)
+      .map(r => ({ name: r.name, value: r.id }));
 
     const commands = [
       {
@@ -105,23 +106,24 @@ async function registerCommands() {
   }
 }
 
-// Handle Discord interactions (Includes debug logging and robust error handling)
+// Handle Discord interactions
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   
   console.log(`[DEBUG] Interaction received: ${interaction.commandName}`);
 
-  // === /ping COMMAND HANDLER ===
+  // === /ping COMMAND HANDLER (Deprecation Warnings FIXED) ===
   if (interaction.commandName === 'ping') {
     try {
-      console.log('[DEBUG] PING: Starting deferReply...');
-      await interaction.deferReply({ ephemeral: true });
+      // FIX: Using flags instead of the deprecated 'ephemeral: true'
+      console.log('[DEBUG] PING: Starting deferReply with flags...');
+      await interaction.deferReply({ flags: InteractionResponseFlags.Ephemeral });
       console.log('[DEBUG] PING: deferReply successful.');
 
       const latency = Date.now() - interaction.createdTimestamp;
       
-      console.log('[DEBUG] PING: Starting editReply...');
-      await interaction.editReply({ content: `Pong! My latency is ${latency}ms.`, ephemeral: true });
+      console.log('[DEBUG] PING: Starting editReply with flags...');
+      await interaction.editReply({ content: `Pong! My latency is ${latency}ms.`, flags: InteractionResponseFlags.Ephemeral });
       console.log('[DEBUG] PING: editReply successful. Command finished.');
       
     } catch (err) {
@@ -129,7 +131,7 @@ client.on('interactionCreate', async interaction => {
     }
     return;
   }
-  // =============================
+  // ========================================================
 
   // === /rank COMMAND HANDLER ===
   if (interaction.commandName === 'rank') {
@@ -204,10 +206,9 @@ client.on('interactionCreate', async interaction => {
 });
 
 // Initialize the bot logic only after Discord is ready
-client.once('ready', async () => {
+client.once('clientReady', async () => { // FIX: Using 'clientReady' instead of deprecated 'ready'
     console.log(`✅ Logged in as ${client.user.tag}`);
     
-    // Log into Roblox and register commands
     await loginRoblox();
     await registerCommands();
     
