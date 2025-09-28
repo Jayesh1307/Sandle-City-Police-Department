@@ -1,16 +1,16 @@
 import 'dotenv/config';
 import express from 'express';
-// FIX: Correctly import all named exports from 'discord.js'
+// Using the namespace import to avoid conflicts
 import * as discord from 'discord.js'; 
 import noblox from 'noblox.js'; 
 
-// Destructure the Discord exports after the import
+// Destructure the Discord exports 
 const {
   Client, 
   GatewayIntentBits, 
   REST, 
   Routes
-} = discord; // InteractionResponseFlags is accessed directly via 'discord.InteractionResponseFlags'
+} = discord;
 
 // Environment variables
 const {
@@ -36,7 +36,7 @@ app.get('/', (req, res) => res.send('Bot is running!'));
 // Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Login to Roblox (Function remains the same)
+// Login to Roblox
 async function loginRoblox() {
   try {
     await noblox.setCookie(ROBLOX_COOKIE);
@@ -49,7 +49,7 @@ async function loginRoblox() {
   }
 }
 
-// Register slash commands (Function remains the same)
+// Register slash commands (Only /rank remains)
 async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
@@ -74,7 +74,7 @@ async function registerCommands() {
 
     const rankChoices = ranks
       .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.id })); // FIX: Using roleset ID (r.id)
+      .map(r => ({ name: r.name, value: r.id })); // Using roleset ID (r.id)
 
     const commands = [
       {
@@ -95,11 +95,8 @@ async function registerCommands() {
             choices: rankChoices
           }
         ]
-      },
-      {
-        name: 'ping',
-        description: 'Checks the bot\'s latency.'
       }
+      // PING COMMAND REMOVED
     ];
 
     console.log('🔄 Started refreshing application (/) commands.');
@@ -119,28 +116,8 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   
   console.log(`[DEBUG] Interaction received: ${interaction.commandName}`);
-
-  // === /ping COMMAND HANDLER (FIXED CRASH) ===
-  if (interaction.commandName === 'ping') {
-    try {
-      // FIX: Accessing the Ephemeral flag via the 'discord' namespace
-      console.log('[DEBUG] PING: Starting deferReply with flags...');
-      await interaction.deferReply({ flags: discord.InteractionResponseFlags.Ephemeral });
-      console.log('[DEBUG] PING: deferReply successful.');
-
-      const latency = Date.now() - interaction.createdTimestamp;
-      
-      console.log('[DEBUG] PING: Starting editReply with flags...');
-      await interaction.editReply({ content: `Pong! My latency is ${latency}ms.`, flags: discord.InteractionResponseFlags.Ephemeral });
-      console.log('[DEBUG] PING: editReply successful. Command finished.');
-      
-    } catch (err) {
-      // This will now only catch true runtime errors, not the TypeError we fixed
-      console.error('❌ PING COMMAND CRASHED:', err);
-    }
-    return;
-  }
-  // ========================================================
+  
+  // PING HANDLER REMOVED
 
   // === /rank COMMAND HANDLER ===
   if (interaction.commandName === 'rank') {
