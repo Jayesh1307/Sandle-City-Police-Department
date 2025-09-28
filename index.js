@@ -1,10 +1,11 @@
 import 'dotenv/config';
 import express from 'express';
-// Using the namespace import to avoid conflicts
-import * as discord from 'discord.js'; 
+import * as discord from 'discord.js';
 import noblox from 'noblox.js'; 
 
-// Destructure the Discord exports 
+// Suppress the deprecated warning for a cleaner startup
+noblox.setOptions({ show_deprecation_warnings: false });
+
 const {
   Client, 
   GatewayIntentBits, 
@@ -49,7 +50,7 @@ async function loginRoblox() {
   }
 }
 
-// Register slash commands (Only /rank remains)
+// Register slash commands (Only /rank)
 async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
@@ -74,7 +75,7 @@ async function registerCommands() {
 
     const rankChoices = ranks
       .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.id })); // Using roleset ID (r.id)
+      .map(r => ({ name: r.name, value: r.id })); 
 
     const commands = [
       {
@@ -96,7 +97,6 @@ async function registerCommands() {
           }
         ]
       }
-      // PING COMMAND REMOVED
     ];
 
     console.log('🔄 Started refreshing application (/) commands.');
@@ -115,65 +115,51 @@ async function registerCommands() {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   
-  console.log(`[DEBUG] Interaction received: ${interaction.commandName}`);
-  
-  // PING HANDLER REMOVED
+  // No more [DEBUG] logging here
 
   // === /rank COMMAND HANDLER ===
   if (interaction.commandName === 'rank') {
-    console.log('[DEBUG] RANK: Rank handler reached.');
-
     // Permission check
     if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
       return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
     try {
-      console.log('[DEBUG] RANK: Starting deferReply...');
       await interaction.deferReply();
-      console.log('[DEBUG] RANK: deferReply successful.');
 
       const username = interaction.options.getString('username');
       const rankId = interaction.options.getInteger('rank');
 
-      console.log('[DEBUG] RANK: Starting noblox.getIdFromUsername...');
       const userId = await noblox.getIdFromUsername(username);
-      console.log(`[DEBUG] RANK: Received UserId: ${userId}`);
 
       if (!userId) {
         return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
       }
 
-      console.log('[DEBUG] RANK: Starting noblox.getRankInGroup...');
       const userInGroup = await noblox.getRankInGroup(parseInt(ROBLOX_GROUP_ID), userId);
-      console.log(`[DEBUG] RANK: User rank in group: ${userInGroup}`);
 
       if (userInGroup === -1) {
         return interaction.editReply({ content: `❌ Roblox user **${username}** is not in the group.` });
       }
 
-      console.log('[DEBUG] RANK: Starting noblox.getRoles...');
       const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
       const selectedRank = ranks.find(r => r.id === rankId);
       const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
-      console.log(`[DEBUG] RANK: Target Rank Name: ${selectedRankName}, ID: ${rankId}`);
 
-      console.log('[DEBUG] RANK: Starting noblox.setRank...');
+      // Final rank operation
       await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankId);
-      console.log('[DEBUG] RANK: noblox.setRank successful.');
 
       const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
       await interaction.editReply({ content: successMessage });
 
+      // Log to internal channel
       const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
       if (logsChannel) {
         logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to **${selectedRankName}**.`);
       }
 
-      console.log('[DEBUG] RANK: Command finished successfully.');
-
     } catch (err) {
-      console.error('❌ AN UNEXPECTED CRASH OCCURRED DURING RANK COMMAND:', err);
+      console.error('❌ RANK COMMAND CRASHED:', err);
       let errorMessage = '❌ An unexpected error occurred. Please try again.';
 
       if (err.message.includes('No group with the ID')) {
