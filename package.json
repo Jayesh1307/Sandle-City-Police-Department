@@ -1,15 +1,15 @@
 {
-  "name": "sandle-city-police-department",
+  "name": "discord-bot",
   "version": "1.0.0",
-  "main": "index.js",
   "type": "module",
+  "main": "index.js",
   "scripts": {
-    "start": "node index.js" 
+    "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.x.x",  
-    "noblox.js": "^6.x.x",
-    "dotenv": "^16.x.x"
-    /* EXPRESS IS NO LONGER NEEDED OR DESIRABLE */
+    "discord.js": "^14.14.1",
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "noblox.js": "^6.0.0"
   }
 }
