@@ -1,6 +1,5 @@
 import 'dotenv/config';
-import express from 'express';
-import * as discord from 'discord.js';
+import * as discord from 'discord.js'; 
 import noblox from 'noblox.js'; 
 
 // Suppress the deprecated warning for a cleaner startup
@@ -20,19 +19,15 @@ const {
   GUILD_ID,
   LOGS_CHANNEL_ID,
   ROBLOX_COOKIE,
-  ROBLOX_GROUP_ID,
-  PORT = 3000
+  ROBLOX_GROUP_ID
 } = process.env;
 
 // --- CRITICAL CHECKS ---
 if (!DISCORD_TOKEN || !GUILD_ID || !ROBLOX_COOKIE || !ROBLOX_GROUP_ID) {
-  console.error('❌ ERROR: Missing required environment variables. Please check your .env file or Render settings.');
-  process.exit(1);
+  console.error('❌ ERROR: Missing required environment variables. Please check your hosting configuration.');
+  // Exit the process cleanly if configuration is missing
+  process.exit(1); 
 }
-
-// Express server setup for UptimeRobot
-const app = express();
-app.get('/', (req, res) => res.send('Bot is running!'));
 
 // Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -44,32 +39,21 @@ async function loginRoblox() {
     const currentUser = await noblox.getCurrentUser();
     console.log(`✅ Logged into Roblox as ${currentUser.UserName} (${currentUser.UserID})`);
   } catch (err) {
-    console.error('❌ Failed to log in to Roblox. Check your ROBLOX_COOKIE and ensure it is valid.');
-    console.error(err);
+    console.error('❌ Failed to log in to Roblox. Check your ROBLOX_COOKIE.');
     process.exit(1);
   }
 }
 
-// Register slash commands (Only /rank)
+// Register slash commands 
 async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
-  try {
-    console.log('🔄 Clearing existing application (/) commands.');
-    await rest.put(
-      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
-      { body: [] }
-    );
-    console.log('✅ Successfully cleared all application (/) commands.');
-  } catch (err) {
-    console.error('❌ Failed to clear slash commands.');
-    console.error(err);
-  }
-
+  // Skip the 'clear' step on every cron job run for speed, but ensure it works initially
+  
   try {
     const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
     if (!ranks) {
-      console.error('❌ Could not retrieve ranks from the Roblox group. Please check the group ID and bot permissions.');
+      console.error('❌ Could not retrieve ranks from the Roblox group.');
       process.exit(1);
     }
 
@@ -99,15 +83,13 @@ async function registerCommands() {
       }
     ];
 
-    console.log('🔄 Started refreshing application (/) commands.');
     await rest.put(
       Routes.applicationGuildCommands(client.user.id, GUILD_ID),
       { body: commands }
     );
-    console.log('✅ Successfully reloaded application (/) commands.');
+    // Removed success logging to keep output clean for cron job
   } catch (err) {
-    console.error('❌ Failed to register slash commands.');
-    console.error(err);
+    console.error('❌ Failed to register slash commands during startup.');
   }
 }
 
@@ -115,8 +97,6 @@ async function registerCommands() {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   
-  // No more [DEBUG] logging here
-
   // === /rank COMMAND HANDLER ===
   if (interaction.commandName === 'rank') {
     // Permission check
@@ -174,30 +154,39 @@ client.on('interactionCreate', async interaction => {
 
       await interaction.editReply({ content: errorMessage }).catch(e => console.error('Failed to send error reply after crash:', e));
     }
+    
+    // CRITICAL: Force the script to close after processing an interaction.
+    // This prevents the Discord connection from hanging open, which is necessary for cron jobs.
+    // If the process must handle multiple events, you may need a setTimeout before exiting.
+    setTimeout(() => {
+        client.destroy();
+        process.exit(0);
+    }, 10000); // Give 10 seconds to finish all tasks and close cleanly
   }
 });
 
-// Initialize the bot logic only after Discord is ready
+
+// FINAL STARTUP LOGIC: Login, set up, and wait for commands.
 client.once('clientReady', async () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
+    console.log(`✅ Bot initialization complete. Logged in as ${client.user.tag}`);
     
     await loginRoblox();
     await registerCommands();
     
-    console.log(`✅ Bot initialization complete.`);
+    // CRITICAL FOR CRON JOBS: Close the process after a short time if no commands are received.
+    // If a command is received, the interaction handler will initiate a custom timeout/exit.
+    setTimeout(() => {
+        if (!client.isReady()) return; // Avoid destroying if not truly ready
+        client.destroy();
+        process.exit(0);
+    }, 15000); // Wait 15 seconds for a command to come in
 });
 
-// === CRITICAL FIX FOR 24/7 UPTIME (Startup Order) ===
-// Start the Express server first and immediately, then log into Discord.
-app.listen(PORT, async () => {
-    console.log(`Express server running on port ${PORT}`);
 
-    // Now, log into Discord and start the bot logic
-    try {
-        await client.login(DISCORD_TOKEN);
-    } catch (error) {
-        console.error('❌ Failed to log in to Discord. Check DISCORD_TOKEN.', error);
-        process.exit(1);
-    }
-});
-// ===================================
+// Launch the bot. This replaces the express server block.
+try {
+    client.login(DISCORD_TOKEN);
+} catch (error) {
+    console.error('❌ Failed to log in to Discord. Check DISCORD_TOKEN.', error);
+    process.exit(1);
+}
