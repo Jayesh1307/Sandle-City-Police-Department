@@ -34,16 +34,18 @@ const client = new Client({
 
 // Function to handle slash command registration
 async function registerSlashCommands() {
+    // We get the token and client ID from the client object after it's logged in.
     const token = process.env.DISCORD_TOKEN;
-    const clientId = client.user.id; // Client ID is needed for registration
+    const clientId = client.user.id; 
     
     // Define your slash commands here (replace with your actual command array)
+    // NOTE: You must populate this array with all your commands for them to register!
     const commands = [
         {
             name: 'ping',
             description: 'Replies with Pong!',
         },
-        // Add all your other command objects here...
+        // ADD YOUR OTHER SLASH COMMAND DEFINITIONS HERE (e.g., /rank, /patrol, etc.)
     ];
 
     try {
@@ -51,7 +53,7 @@ async function registerSlashCommands() {
 
         console.log('Started refreshing application (/) commands.');
         
-        // This registers the commands globally (or per-guild if you change the route)
+        // Register commands globally
         await rest.put(
             Routes.applicationCommands(clientId),
             { body: commands },
@@ -64,17 +66,17 @@ async function registerSlashCommands() {
     }
 }
 
-// **FIXED:** Changed 'ready' to 'clientReady' to avoid the DeprecationWarning
+// **FIXED:** Changed 'ready' to 'clientReady' and ensured function closure.
 client.on('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     
-    // **FIXED:** Slash Command Registration is now called here.
-    // This ensures it runs ONLY ONCE after the client is fully ready.
+    // Slash Command Registration is now called here.
     await registerSlashCommands(); 
     
-    // Add your other initialization code here (e.g., Roblox login logic)
+    // Roblox login logic
     if (process.env.ROBLOX_COOKIE) {
         try {
+            // Note: The variable name for the Roblox Cookie should match what you set in Render
             const currentUser = await noblox.setCookie(process.env.ROBLOX_COOKIE);
             console.log(`✅ Logged into Roblox as ${currentUser.UserName} (${currentUser.UserID})`);
         } catch (error) {
@@ -83,3 +85,19 @@ client.on('clientReady', async () => {
     }
     
     console.log('Bot initialization complete.');
+}); // <-- THIS CLOSING BRACE WAS MISSING
+
+// Add your command and interaction listeners here...
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === 'ping') {
+        await interaction.reply({ content: 'Pong!', ephemeral: true });
+    }
+    // Add your command handling logic here...
+});
+
+
+// Log in to Discord
+// Make sure you have DISCORD_TOKEN set in Render environment variables
+client.login(process.env.DISCORD_TOKEN); // <-- THIS LOGIN CALL WAS MISSING
