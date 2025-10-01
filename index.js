@@ -22,7 +22,7 @@ app.listen(port, () => {
 });
 
 // ----------------------------------------------------------------
-// 2. DISCORD BOT LOGIC 
+// 2. DISCORD BOT CLIENT SETUP
 // ----------------------------------------------------------------
 const client = new Client({
     intents: [
@@ -32,9 +32,13 @@ const client = new Client({
     ],
 });
 
+// ----------------------------------------------------------------
+// 3. SLASH COMMAND REGISTRATION
+// ----------------------------------------------------------------
+
 // Function to handle slash command registration
 async function registerSlashCommands() {
-    // Uses DISCORD_TOKEN and CLIENT_ID from Render environment variables
+    // Requires DISCORD_TOKEN and CLIENT_ID set in Render environment variables
     const token = process.env.DISCORD_TOKEN;
     const clientId = process.env.CLIENT_ID; 
 
@@ -45,13 +49,12 @@ async function registerSlashCommands() {
             description: 'Replies with Pong!',
         },
         // ADD ALL YOUR OTHER SLASH COMMAND DEFINITIONS HERE (e.g., /rank, /patrol)
+        // Ensure every command your bot uses is defined in this array.
         // Example:
         // {
         //     name: 'rank',
         //     description: 'Ranks a user in the Roblox group.',
-        //     options: [
-        //         // ... your options
-        //     ]
+        //     options: [ /* ... your options ... */ ]
         // }
     ];
 
@@ -62,10 +65,8 @@ async function registerSlashCommands() {
 
     try {
         const rest = new REST({ version: '10' }).setToken(token);
-
         console.log('Started refreshing application (/) commands.');
         
-        // Register commands globally
         await rest.put(
             Routes.applicationCommands(clientId),
             { body: commands },
@@ -77,21 +78,25 @@ async function registerSlashCommands() {
     }
 }
 
+// ----------------------------------------------------------------
+// 4. CLIENT READY & INITIALIZATION
+// ----------------------------------------------------------------
+
 // Event fired when the Discord client is fully ready
 client.on('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     
-    // Slash Command Registration is called here.
+    // 1. Register Slash Commands
     await registerSlashCommands(); 
     
-    // Roblox login logic
+    // 2. Roblox login logic
     if (process.env.ROBLOX_COOKIE) {
         try {
-            // Ensure ROBLOX_COOKIE is set in Render environment variables
+            // This relies on the fresh cookie you just updated.
             const currentUser = await noblox.setCookie(process.env.ROBLOX_COOKIE);
             console.log(`✅ Logged into Roblox as ${currentUser.UserName} (${currentUser.UserID})`);
         } catch (error) {
-            console.error('❌ Failed to log into Roblox:', error);
+            console.error('❌ Failed to log into Roblox. Commands depending on Roblox WILL FAIL:', error);
         }
     }
     
@@ -99,21 +104,23 @@ client.on('clientReady', async () => {
 }); 
 
 // ----------------------------------------------------------------
-// 3. INTERACTION HANDLING LOGIC
+// 5. INTERACTION HANDLING LOGIC
 // ----------------------------------------------------------------
+
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    if (interaction.commandName === 'ping') {
+    const commandName = interaction.commandName;
+
+    // A. Fast Command: /ping
+    if (commandName === 'ping') {
         await interaction.reply({ content: 'Pong! The bot is responding.', ephemeral: true });
+        return; 
     }
-    // IMPORTANT: Add all your command handling logic here!
-    // Example:
-    // if (interaction.commandName === 'rank') {
-    //     // ... your ranking code
-    // }
-});
 
-
-// Log in to Discord
-client.login(process.env.DISCORD_TOKEN);
+    // B. SLOW COMMANDS (Require Deferral to prevent "Application did not respond")
+    try {
+        // Send "Bot is thinking..." message immediately 
+        await interaction.deferReply({ ephemeral: false }); 
+    } catch (e) {
+        // If deferral fails, the command is already timed out or
