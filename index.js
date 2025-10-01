@@ -49,7 +49,6 @@ async function registerSlashCommands() {
             description: 'Replies with Pong!',
         },
         // ADD ALL YOUR OTHER SLASH COMMAND DEFINITIONS HERE (e.g., /rank, /patrol)
-        // Ensure every command your bot uses is defined in this array.
         // Example:
         // {
         //     name: 'rank',
@@ -96,6 +95,7 @@ client.on('clientReady', async () => {
             const currentUser = await noblox.setCookie(process.env.ROBLOX_COOKIE);
             console.log(`✅ Logged into Roblox as ${currentUser.UserName} (${currentUser.UserID})`);
         } catch (error) {
+            // If this fails, the cookie is bad. You must update it in Render.
             console.error('❌ Failed to log into Roblox. Commands depending on Roblox WILL FAIL:', error);
         }
     }
@@ -120,7 +120,44 @@ client.on('interactionCreate', async interaction => {
 
     // B. SLOW COMMANDS (Require Deferral to prevent "Application did not respond")
     try {
-        // Send "Bot is thinking..." message immediately 
+        // Send "Bot is thinking..." message immediately to avoid timeout
         await interaction.deferReply({ ephemeral: false }); 
     } catch (e) {
-        // If deferral fails, the command is already timed out or
+        // If deferral fails, the command is already timed out or invalid
+        console.error(`Failed to defer reply for /${commandName}:`, e);
+        return;
+    }
+    
+    // C. Command execution logic
+    try {
+        if (commandName === 'rank') {
+            // ************ // YOUR ROBLOX RANKING LOGIC GOES HERE 
+            // ************ // Example placeholder response:
+            await interaction.editReply({ content: 'Rank command is ready to be implemented!', ephemeral: true });
+
+        } else if (commandName === 'patrol') {
+            // ************ // YOUR /PATROL LOGIC GOES HERE 
+            // ************ // Example placeholder response:
+            await interaction.editReply({ content: 'Patrol command is ready to be implemented!', ephemeral: true });
+
+        } else {
+            // Handle any command that exists in Discord but isn't handled here
+            await interaction.editReply({ content: `Unknown command: /${commandName}`, ephemeral: true });
+        }
+        
+    } catch (error) {
+        // Catch any error during command execution (e.g., Roblox error)
+        console.error(`CRITICAL ERROR during /${commandName}:`, error);
+        await interaction.editReply({ 
+            content: '❌ An internal error occurred while running the command. Please check the logs.', 
+            ephemeral: true 
+        });
+    }
+});
+
+
+// ----------------------------------------------------------------
+// 6. START BOT
+// ----------------------------------------------------------------
+// Log in to Discord
+client.login(process.env.DISCORD_TOKEN);
