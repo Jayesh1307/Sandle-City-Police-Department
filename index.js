@@ -4,18 +4,16 @@ import 'dotenv/config';
 import noblox from 'noblox.js'; 
 
 // ----------------------------------------------------------------
-// 1. KEEP-ALIVE SERVER SETUP (For Render Free Tier)
+// 1. KEEP-ALIVE SERVER SETUP (For Hosting)
 // ----------------------------------------------------------------
 const app = express();
-// Render automatically provides the port in the environment variable PORT
+// The port is usually provided by the hosting service (3000 for Replit/Render)
 const port = process.env.PORT || 3000; 
 
-// Simple route for the keep-alive service (e.g., UptimeRobot)
 app.get('/', (req, res) => {
     res.send('Discord Bot is alive and running!');
 });
 
-// Start the web server
 app.listen(port, () => {
     console.log(`Keep-alive server running on port ${port}`);
 });
@@ -35,17 +33,21 @@ const client = new Client({
 // 3. SLASH COMMAND REGISTRATION
 // ----------------------------------------------------------------
 
-// Function to handle slash command registration
+// --- DEFINE YOUR RANK CHOICES HERE ---
+// You MUST customize these with your group's actual ranks and IDs.
+const RANK_CHOICES = [
+    { name: 'Trainee', value: 1 },
+    { name: 'Officer', value: 5 },
+    { name: 'Sergeant', value: 10 },
+    { name: 'Lieutenant', value: 15 },
+    // ADD ALL YOUR RANKS HERE
+];
+
 async function registerSlashCommands() {
     const token = process.env.DISCORD_TOKEN;
     const clientId = process.env.CLIENT_ID; 
 
-    // --- IMPORTANT: DEFINE YOUR SLASH COMMANDS HERE ---
     const commands = [
-        {
-            name: 'ping',
-            description: 'Replies with Pong!',
-        },
         // **RANK COMMAND DEFINITION**
         new SlashCommandBuilder()
             .setName('rank')
@@ -56,10 +58,11 @@ async function registerSlashCommands() {
                     .setRequired(true))
             .addIntegerOption(option =>
                 option.setName('rankid')
-                    .setDescription('The Roblox rank ID (e.g., 5 for Officer).')
+                    .setDescription('Select the target rank.')
+                    // ADD THE CHOICES HERE TO MAKE RANKS APPEAR IN DISCORD
+                    .setChoices(...RANK_CHOICES) 
                     .setRequired(true))
             .toJSON(),
-        // ADD OTHER COMMANDS HERE (if any)
     ];
 
     if (!clientId) {
@@ -89,10 +92,8 @@ async function registerSlashCommands() {
 client.on('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     
-    // 1. Register Slash Commands
     await registerSlashCommands(); 
     
-    // 2. Roblox login logic
     if (process.env.ROBLOX_COOKIE) {
         try {
             const currentUser = await noblox.setCookie(process.env.ROBLOX_COOKIE);
@@ -114,13 +115,9 @@ client.on('interactionCreate', async interaction => {
 
     const commandName = interaction.commandName;
 
-    // A. Fast Command: /ping
-    if (commandName === 'ping') {
-        await interaction.reply({ content: 'Pong! The bot is responding.', ephemeral: true });
-        return; 
-    }
+    // NO /ping command handling is present here.
 
-    // B. SLOW COMMANDS (Require Deferral to prevent "Application did not respond")
+    // All slow commands (like /rank) must defer the reply
     try {
         await interaction.deferReply({ ephemeral: false }); 
     } catch (e) {
@@ -128,7 +125,7 @@ client.on('interactionCreate', async interaction => {
         return;
     }
     
-    // C. Command execution logic
+    // Command execution logic
     try {
         if (commandName === 'rank') {
             
@@ -137,7 +134,7 @@ client.on('interactionCreate', async interaction => {
             const targetRankId = interaction.options.getInteger('rankid'); 
 
             // **!!! REPLACE with your actual Roblox Group ID !!!**
-            const groupId = 35844460; // <-- CHANGE THIS TO YOUR GROUP ID
+            const groupId = 1234567; // <-- CHANGE THIS TO YOUR GROUP ID
 
             // 2. Look up the Roblox User ID
             const targetUserId = await noblox.getIdFromUsername(targetUsername);
