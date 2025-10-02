@@ -36,8 +36,9 @@ app.listen(PORT, () => console.log(`Express keep-alive server running on port ${
 // Discord client setup - ADDED GatewayIntentBits.Guilds to receive interactions
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Global variable to store fetched ranks
+// Global variable to store fetched ranks and bot's current rank
 let rankChoicesCache = [];
+let botCurrentRank = 0; // Initialize bot's current rank
 
 // Function to log into Roblox and retrieve the group's ranks
 async function initializeRoblox() {
@@ -60,6 +61,12 @@ async function initializeRoblox() {
       process.exit(1); 
     }
     console.log(`✅ Fetched ${rankChoicesCache.length} ranks from Roblox Group.`);
+
+    // 3. Get Bot's current rank for safety checks
+    const botRankInfo = await noblox.getRank(GROUP_ID_INT, currentUser.UserID);
+    botCurrentRank = botRankInfo;
+    console.log(`🤖 Bot's current rank in group: ${botCurrentRank}`);
+
 
   } catch (err) {
     console.error('❌ CRITICAL FAILURE during Roblox initialization. Check ROBLOX_COOKIE or group membership/permissions.');
@@ -128,24 +135,33 @@ client.on('interactionCreate', async interaction => {
     const rankNumber = interaction.options.getInteger('rank');
 
     try {
-      // 1. Get User ID
+      // 1. Safety Check: Bot cannot promote higher than its own rank.
+      if (rankNumber >= botCurrentRank) {
+          const botRankName = rankChoicesCache.find(r => r.value === botCurrentRank)?.name || 'Unknown Rank';
+          return interaction.editReply({ 
+              content: `❌ Rank failed. The target rank ID (**${rankNumber}**) is too high or equal to the bot's current rank (**${botRankName}** / ${botCurrentRank}).`, 
+              ephemeral: true 
+          });
+      }
+
+      // 2. Get User ID
       const userId = await noblox.getIdFromUsername(username);
 
       if (!userId) {
         return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
       }
 
-      // 2. Find rank name for logging (using the cached data)
+      // 3. Find rank name for logging (using the cached data)
       const selectedRank = rankChoicesCache.find(r => r.value === rankNumber);
       const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
 
-      // 3. Set the Rank 
+      // 4. Set the Rank 
       await noblox.setRank(GROUP_ID_INT, userId, rankNumber);
 
       const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
       await interaction.editReply({ content: successMessage });
 
-      // 4. Log the action to a specific channel
+      // 5. Log the action to a specific channel
       const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
       if (logsChannel) {
         logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to **${selectedRankName}**.`);
@@ -172,7 +188,7 @@ client.on('interactionCreate', async interaction => {
 // Initialize the bot: This is the correct order of operations.
 client.once('ready', async () => {
   console.log(`✅ Discord client ready.`);
-  // 1. Initialize Roblox (log in and fetch ranks)
+  // 1. Initialize Roblox (log in and fetch ranks, and get bot's rank)
   await initializeRoblox(); 
   // 2. Register Commands (requires fetched ranks and client.user.id)
   await registerCommands();
