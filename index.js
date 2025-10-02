@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import express from 'express';
 import 'dotenv/config'; 
 import noblox from 'noblox.js'; 
@@ -12,7 +12,6 @@ const port = process.env.PORT || 3000;
 
 // Simple route for the keep-alive service (e.g., UptimeRobot)
 app.get('/', (req, res) => {
-    // This is the health check endpoint that UptimeRobot will ping
     res.send('Discord Bot is alive and running!');
 });
 
@@ -38,7 +37,6 @@ const client = new Client({
 
 // Function to handle slash command registration
 async function registerSlashCommands() {
-    // Requires DISCORD_TOKEN and CLIENT_ID set in Render environment variables
     const token = process.env.DISCORD_TOKEN;
     const clientId = process.env.CLIENT_ID; 
 
@@ -48,13 +46,20 @@ async function registerSlashCommands() {
             name: 'ping',
             description: 'Replies with Pong!',
         },
-        // ADD ALL YOUR OTHER SLASH COMMAND DEFINITIONS HERE (e.g., /rank, /patrol)
-        // Example:
-        // {
-        //     name: 'rank',
-        //     description: 'Ranks a user in the Roblox group.',
-        //     options: [ /* ... your options ... */ ]
-        // }
+        // **RANK COMMAND DEFINITION**
+        new SlashCommandBuilder()
+            .setName('rank')
+            .setDescription('Ranks a Roblox user in the Sandle City Police Group.')
+            .addStringOption(option =>
+                option.setName('username')
+                    .setDescription('The Roblox username of the person to rank.')
+                    .setRequired(true))
+            .addIntegerOption(option =>
+                option.setName('rankid')
+                    .setDescription('The Roblox rank ID (e.g., 5 for Officer).')
+                    .setRequired(true))
+            .toJSON(),
+        // ADD OTHER COMMANDS HERE
     ];
 
     if (!clientId) {
@@ -81,7 +86,6 @@ async function registerSlashCommands() {
 // 4. CLIENT READY & INITIALIZATION
 // ----------------------------------------------------------------
 
-// Event fired when the Discord client is fully ready
 client.on('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     
@@ -91,11 +95,9 @@ client.on('clientReady', async () => {
     // 2. Roblox login logic
     if (process.env.ROBLOX_COOKIE) {
         try {
-            // This relies on the fresh cookie you just updated.
             const currentUser = await noblox.setCookie(process.env.ROBLOX_COOKIE);
             console.log(`✅ Logged into Roblox as ${currentUser.UserName} (${currentUser.UserID})`);
         } catch (error) {
-            // If this fails, the cookie is bad. You must update it in Render.
             console.error('❌ Failed to log into Roblox. Commands depending on Roblox WILL FAIL:', error);
         }
     }
@@ -120,10 +122,8 @@ client.on('interactionCreate', async interaction => {
 
     // B. SLOW COMMANDS (Require Deferral to prevent "Application did not respond")
     try {
-        // Send "Bot is thinking..." message immediately to avoid timeout
         await interaction.deferReply({ ephemeral: false }); 
     } catch (e) {
-        // If deferral fails, the command is already timed out or invalid
         console.error(`Failed to defer reply for /${commandName}:`, e);
         return;
     }
@@ -131,33 +131,36 @@ client.on('interactionCreate', async interaction => {
     // C. Command execution logic
     try {
         if (commandName === 'rank') {
-            // ************ // YOUR ROBLOX RANKING LOGIC GOES HERE 
-            // ************ // Example placeholder response:
-            await interaction.editReply({ content: 'Rank command is ready to be implemented!', ephemeral: true });
+            
+            // 1. Get the command options
+            const targetUsername = interaction.options.getString('username'); 
+            const targetRankId = interaction.options.getInteger('rankid'); 
 
-        } else if (commandName === 'patrol') {
-            // ************ // YOUR /PATROL LOGIC GOES HERE 
-            // ************ // Example placeholder response:
-            await interaction.editReply({ content: 'Patrol command is ready to be implemented!', ephemeral: true });
+            // **!!! REPLACE with your actual Roblox Group ID !!!**
+            const groupId = 1234567; // <-- CHANGE THIS
 
-        } else {
-            // Handle any command that exists in Discord but isn't handled here
-            await interaction.editReply({ content: `Unknown command: /${commandName}`, ephemeral: true });
-        }
-        
-    } catch (error) {
-        // Catch any error during command execution (e.g., Roblox error)
-        console.error(`CRITICAL ERROR during /${commandName}:`, error);
-        await interaction.editReply({ 
-            content: '❌ An internal error occurred while running the command. Please check the logs.', 
-            ephemeral: true 
-        });
-    }
-});
+            // 2. Look up the Roblox User ID
+            const targetUserId = await noblox.getIdFromUsername(targetUsername);
 
+            if (!targetUserId) {
+                await interaction.editReply({ 
+                    content: `❌ Roblox user **${targetUsername}** not found.`, 
+                    ephemeral: true 
+                });
+                return;
+            }
 
-// ----------------------------------------------------------------
-// 6. START BOT
-// ----------------------------------------------------------------
-// Log in to Discord
-client.login(process.env.DISCORD_TOKEN);
+            // 3. Set the Rank
+            await noblox.setRank({ 
+                group: groupId, 
+                target: targetUserId, 
+                rank: targetRankId 
+            });
+
+            // 4. Send Success Message
+            await interaction.editReply({ 
+                content: `✅ Successfully ranked **${targetUsername}** to rank ID **${targetRankId}**!`, 
+                ephemeral: false 
+            });
+
+        } else if (commandName === '
