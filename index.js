@@ -117,3 +117,69 @@ client.on('interactionCreate', async interaction => {
     // A. Fast Command: /ping
     if (commandName === 'ping') {
         await interaction.reply({ content: 'Pong! The bot is responding.', ephemeral: true });
+        return; 
+    }
+
+    // B. SLOW COMMANDS (Require Deferral to prevent "Application did not respond")
+    try {
+        await interaction.deferReply({ ephemeral: false }); 
+    } catch (e) {
+        console.error(`Failed to defer reply for /${commandName}:`, e);
+        return;
+    }
+    
+    // C. Command execution logic
+    try {
+        if (commandName === 'rank') {
+            
+            // 1. Get the command options
+            const targetUsername = interaction.options.getString('username'); 
+            const targetRankId = interaction.options.getInteger('rankid'); 
+
+            // **!!! REPLACE with your actual Roblox Group ID !!!**
+            const groupId = 35844460; // <-- CHANGE THIS TO YOUR GROUP ID
+
+            // 2. Look up the Roblox User ID
+            const targetUserId = await noblox.getIdFromUsername(targetUsername);
+
+            if (!targetUserId) {
+                await interaction.editReply({ 
+                    content: `❌ Roblox user **${targetUsername}** not found.`, 
+                    ephemeral: true 
+                });
+                return;
+            }
+
+            // 3. Set the Rank
+            await noblox.setRank({ 
+                group: groupId, 
+                target: targetUserId, 
+                rank: targetRankId 
+            });
+
+            // 4. Send Success Message
+            await interaction.editReply({ 
+                content: `✅ Successfully ranked **${targetUsername}** to rank ID **${targetRankId}**!`, 
+                ephemeral: false 
+            });
+
+        } else {
+            // Fallback for any unhandled command
+            await interaction.editReply({ content: `Unknown command: /${commandName}`, ephemeral: true });
+        }
+        
+    } catch (error) {
+        // Catch any error during command execution (e.g., Roblox error)
+        console.error(`CRITICAL ERROR during /${commandName}:`, error);
+        await interaction.editReply({ 
+            content: `❌ Failed to execute /${commandName}. Error: ${error.message || 'Check bot logs.'}`, 
+            ephemeral: true 
+        });
+    }
+});
+
+
+// ----------------------------------------------------------------
+// 6. START BOT
+// ----------------------------------------------------------------
+client.login(process.env.DISCORD_TOKEN);
