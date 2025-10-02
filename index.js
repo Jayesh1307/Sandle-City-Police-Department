@@ -1,9 +1,19 @@
 import 'dotenv/config';
 import express from 'express';
-import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
-import noblox from 'noblox.js';
+import * as discord from 'discord.js';
+import noblox from 'noblox.js'; 
 
-// Environment variables are destructured here
+// Suppress the deprecated warning for a cleaner startup
+noblox.setOptions({ show_deprecation_warnings: false });
+
+const {
+  Client, 
+  GatewayIntentBits, 
+  REST, 
+  Routes
+} = discord;
+
+// Environment variables
 const {
   DISCORD_TOKEN,
   ALLOWED_ROLE,
@@ -15,101 +25,84 @@ const {
 } = process.env;
 
 // --- CRITICAL CHECKS ---
-// Added checks for ALLOWED_ROLE and LOGS_CHANNEL_ID as they are used later.
-if (!DISCORD_TOKEN || !GUILD_ID || !ROBLOX_COOKIE || !ROBLOX_GROUP_ID || !ALLOWED_ROLE || !LOGS_CHANNEL_ID) {
-  console.error('❌ ERROR: Missing one or more required environment variables (DISCORD_TOKEN, GUILD_ID, ROBLOX_COOKIE, ROBLOX_GROUP_ID, ALLOWED_ROLE, LOGS_CHANNEL_ID). Please check your Secrets/Environment tab.');
+if (!DISCORD_TOKEN || !GUILD_ID || !ROBLOX_COOKIE || !ROBLOX_GROUP_ID) {
+  console.error('❌ ERROR: Missing required environment variables. Please check your .env file or Render settings.');
   process.exit(1);
 }
 
-// Ensure Group ID is parsed as an integer early
-const GROUP_ID_INT = parseInt(ROBLOX_GROUP_ID);
-if (isNaN(GROUP_ID_INT)) {
-    console.error('❌ ERROR: ROBLOX_GROUP_ID is not a valid number.');
-    process.exit(1);
-}
-
-// Express server to keep bot alive
+// Express server setup for UptimeRobot
 const app = express();
-app.get('/', (req, res) => res.send('Bot is running and operational!'));
-app.listen(PORT, () => console.log(`Express keep-alive server running on port ${PORT}`));
+app.get('/', (req, res) => res.send('Bot is running!'));
 
-// Discord client setup - ADDED GatewayIntentBits.Guilds to receive interactions
+// Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Global variable to store fetched ranks and bot's current rank
-let rankChoicesCache = [];
-let botCurrentRank = 0; // Initialize bot's current rank
-
-// Function to log into Roblox and retrieve the group's ranks
-async function initializeRoblox() {
+// Login to Roblox
+async function loginRoblox() {
   try {
-    // 1. Login
     await noblox.setCookie(ROBLOX_COOKIE);
     const currentUser = await noblox.getCurrentUser();
     console.log(`✅ Logged into Roblox as ${currentUser.UserName} (${currentUser.UserID})`);
-    
-    // 2. Cache Ranks
-    const ranks = await noblox.getRoles(GROUP_ID_INT);
-    
-    // Filter out Guest rank (rank 0) and map to Discord choice format
-    rankChoicesCache = ranks
-      .filter(r => r.rank > 0)
-      .map(r => ({ name: r.name, value: r.rank }));
-
-    if (rankChoicesCache.length === 0) {
-      console.error('❌ Could not retrieve any ranks. Check Group ID or if the bot is in the group.');
-      process.exit(1); 
-    }
-    console.log(`✅ Fetched ${rankChoicesCache.length} ranks from Roblox Group.`);
-
-    // 3. Get Bot's current rank for safety checks
-    const botRankInfo = await noblox.getRank(GROUP_ID_INT, currentUser.UserID);
-    botCurrentRank = botRankInfo;
-    console.log(`🤖 Bot's current rank in group: ${botCurrentRank}`);
-
-
   } catch (err) {
-    console.error('❌ CRITICAL FAILURE during Roblox initialization. Check ROBLOX_COOKIE or group membership/permissions.');
+    console.error('❌ Failed to log in to Roblox. Check your ROBLOX_COOKIE and ensure it is valid.');
     console.error(err);
-    // Do not exit here; allow Discord to try and connect, but commands will fail.
-    // However, since we rely on ranks for registration, we should exit.
     process.exit(1);
   }
 }
 
-// Register slash commands with Discord
+// Register slash commands (Only /rank)
 async function registerCommands() {
-  
-  // This function relies on rankChoicesCache being populated by initializeRoblox()
-  const rankCommand = {
-    name: 'rank',
-    description: 'Assign a rank to a Roblox user in the group.',
-    options: [
-      {
-        name: 'username',
-        type: 3, // STRING
-        description: 'The Roblox username to rank',
-        required: true
-      },
-      {
-        name: 'rank',
-        type: 4, // INTEGER
-        description: 'The Roblox rank to assign',
-        required: true,
-        // Use the dynamically fetched ranks for choices
-        choices: rankChoicesCache
-      }
-    ]
-  };
-
   const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+
   try {
-    console.log('🔄 Started refreshing application (/) commands.');
-    
-    // client.user.id is available here because this is called after 'ready'
+    console.log('🔄 Clearing existing application (/) commands.');
     await rest.put(
       Routes.applicationGuildCommands(client.user.id, GUILD_ID),
-      { body: [rankCommand] }
+      { body: [] }
+    );
+    console.log('✅ Successfully cleared all application (/) commands.');
+  } catch (err) {
+    console.error('❌ Failed to clear slash commands.');
+    console.error(err);
+  }
+
+  try {
+    const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
+    if (!ranks) {
+      console.error('❌ Could not retrieve ranks from the Roblox group. Please check the group ID and bot permissions.');
+      process.exit(1);
+    }
+
+    const rankChoices = ranks
+      .filter(r => r.rank > 0)
+      .map(r => ({ name: r.name, value: r.id })); 
+
+    const commands = [
+      {
+        name: 'rank',
+        description: 'Assign a rank to a Roblox user',
+        options: [
+          {
+            name: 'username',
+            type: 3, // STRING
+            description: 'The Roblox username to rank',
+            required: true
+          },
+          {
+            name: 'rank',
+            type: 4, // INTEGER
+            description: 'The Roblox rank to assign',
+            required: true,
+            choices: rankChoices
+          }
+        ]
+      }
+    ];
+
+    console.log('🔄 Started refreshing application (/) commands.');
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+      { body: commands }
     );
     console.log('✅ Successfully reloaded application (/) commands.');
   } catch (err) {
@@ -121,78 +114,90 @@ async function registerCommands() {
 // Handle Discord interactions
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+  
+  // No more [DEBUG] logging here
 
+  // === /rank COMMAND HANDLER ===
   if (interaction.commandName === 'rank') {
-    // Permission check: Uses ALLOWED_ROLE environment variable
-    if (!interaction.member || !interaction.member.roles.cache.has(ALLOWED_ROLE)) {
-      return interaction.reply({ content: '❌ You are not authorized to use the ranking command.', ephemeral: true });
+    // Permission check
+    if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
+      return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
 
-    // Defer the reply for long operations (Roblox API calls)
-    await interaction.deferReply();
-
-    const username = interaction.options.getString('username');
-    const rankNumber = interaction.options.getInteger('rank');
-
     try {
-      // 1. Safety Check: Bot cannot promote higher than its own rank.
-      if (rankNumber >= botCurrentRank) {
-          const botRankName = rankChoicesCache.find(r => r.value === botCurrentRank)?.name || 'Unknown Rank';
-          return interaction.editReply({ 
-              content: `❌ Rank failed. The target rank ID (**${rankNumber}**) is too high or equal to the bot's current rank (**${botRankName}** / ${botCurrentRank}).`, 
-              ephemeral: true 
-          });
-      }
+      await interaction.deferReply();
 
-      // 2. Get User ID
+      const username = interaction.options.getString('username');
+      const rankId = interaction.options.getInteger('rank');
+
       const userId = await noblox.getIdFromUsername(username);
 
       if (!userId) {
         return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
       }
 
-      // 3. Find rank name for logging (using the cached data)
-      const selectedRank = rankChoicesCache.find(r => r.value === rankNumber);
+      const userInGroup = await noblox.getRankInGroup(parseInt(ROBLOX_GROUP_ID), userId);
+
+      if (userInGroup === -1) {
+        return interaction.editReply({ content: `❌ Roblox user **${username}** is not in the group.` });
+      }
+
+      const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
+      const selectedRank = ranks.find(r => r.id === rankId);
       const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
 
-      // 4. Set the Rank 
-      await noblox.setRank(GROUP_ID_INT, userId, rankNumber);
+      // Final rank operation
+      await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankId);
 
       const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
       await interaction.editReply({ content: successMessage });
 
-      // 5. Log the action to a specific channel
+      // Log to internal channel
       const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
       if (logsChannel) {
         logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to **${selectedRankName}**.`);
       }
 
     } catch (err) {
-      console.error(`❌ Error during rank change for ${username}:`, err);
-      let errorMessage = '❌ An unexpected error occurred during the ranking process. Please try again.';
+      console.error('❌ RANK COMMAND CRASHED:', err);
+      let errorMessage = '❌ An unexpected error occurred. Please try again.';
 
-      // More informative error messages based on noblox.js errors
       if (err.message.includes('No group with the ID')) {
-        errorMessage = '❌ Failed to find the Roblox group. Check the `ROBLOX_GROUP_ID`.';
-      } else if (err.message.includes('Authorization has been denied')) {
-        errorMessage = '❌ Failed to set rank. The bot\'s Roblox account may not have permission, or its rank is too low/equal to target.';
+        errorMessage = '❌ Failed to find the Roblox group. Please check the `ROBLOX_GROUP_ID`.';
+      } else if (err.message.includes('Authorization has been denied for this request.')) {
+        errorMessage = '❌ Failed to set rank. The bot\'s Roblox account may not have permission, or its rank is too low.';
       } else if (err.message.includes('The specified rank is not a valid rank')) {
-        errorMessage = '❌ The rank selected is not a valid rank in the group.';
+        errorMessage = '❌ The provided rank is not a valid rank in the group.';
+      } else if (err.message.includes('Request failed with status code 500') || err.message.includes('Request failed with status code 503')) {
+        errorMessage = '❌ The Roblox API is currently unavailable. Please try again later.';
       }
 
-      await interaction.editReply({ content: errorMessage });
+      await interaction.editReply({ content: errorMessage }).catch(e => console.error('Failed to send error reply after crash:', e));
     }
   }
 });
 
-// Initialize the bot: This is the correct order of operations.
-client.once('ready', async () => {
-  console.log(`✅ Discord client ready.`);
-  // 1. Initialize Roblox (log in and fetch ranks, and get bot's rank)
-  await initializeRoblox(); 
-  // 2. Register Commands (requires fetched ranks and client.user.id)
-  await registerCommands();
+// Initialize the bot logic only after Discord is ready
+client.once('clientReady', async () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    
+    await loginRoblox();
+    await registerCommands();
+    
+    console.log(`✅ Bot initialization complete.`);
 });
 
-// Start the Discord login process
-client.login(DISCORD_TOKEN);
+// === CRITICAL FIX FOR 24/7 UPTIME (Startup Order) ===
+// Start the Express server first and immediately, then log into Discord.
+app.listen(PORT, async () => {
+    console.log(`Express server running on port ${PORT}`);
+
+    // Now, log into Discord and start the bot logic
+    try {
+        await client.login(DISCORD_TOKEN);
+    } catch (error) {
+        console.error('❌ Failed to log in to Discord. Check DISCORD_TOKEN.', error);
+        process.exit(1);
+    }
+});
+// ===================================
