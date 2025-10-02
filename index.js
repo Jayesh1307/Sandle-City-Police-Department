@@ -1,182 +1,154 @@
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import 'dotenv/config';
 import express from 'express';
-import 'dotenv/config'; 
-import noblox from 'noblox.js'; 
+import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
+import noblox from 'noblox.js';
 
-// ----------------------------------------------------------------
-// 1. KEEP-ALIVE SERVER SETUP (For Hosting)
-// ----------------------------------------------------------------
-const app = express();
-// The port is usually provided by the hosting service (3000 for Replit/Render)
-const port = process.env.PORT || 3000; 
+// Environment variables
+const {
+  DISCORD_TOKEN,
+  ALLOWED_ROLE,
+  GUILD_ID,
+  LOGS_CHANNEL_ID,
+  ROBLOX_COOKIE,
+  ROBLOX_GROUP_ID,
+  PORT = 3000
+} = process.env;
 
-app.get('/', (req, res) => {
-    res.send('Discord Bot is alive and running!');
-});
-
-app.listen(port, () => {
-    console.log(`Keep-alive server running on port ${port}`);
-});
-
-// ----------------------------------------------------------------
-// 2. DISCORD BOT CLIENT SETUP
-// ----------------------------------------------------------------
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-    ],
-});
-
-// ----------------------------------------------------------------
-// 3. SLASH COMMAND REGISTRATION
-// ----------------------------------------------------------------
-
-// --- DEFINE YOUR RANK CHOICES HERE ---
-// You MUST customize these with your group's actual ranks and IDs.
-const RANK_CHOICES = [
-    { name: 'Trainee', value: 1 },
-    { name: 'Officer', value: 5 },
-    { name: 'Sergeant', value: 10 },
-    { name: 'Lieutenant', value: 15 },
-    // ADD ALL YOUR RANKS HERE
-];
-
-async function registerSlashCommands() {
-    const token = process.env.DISCORD_TOKEN;
-    const clientId = process.env.CLIENT_ID; 
-
-    const commands = [
-        // **RANK COMMAND DEFINITION**
-        new SlashCommandBuilder()
-            .setName('rank')
-            .setDescription('Ranks a Roblox user in the Sandle City Police Group.')
-            .addStringOption(option =>
-                option.setName('username')
-                    .setDescription('The Roblox username of the person to rank.')
-                    .setRequired(true))
-            .addIntegerOption(option =>
-                option.setName('rankid')
-                    .setDescription('Select the target rank.')
-                    // ADD THE CHOICES HERE TO MAKE RANKS APPEAR IN DISCORD
-                    .setChoices(...RANK_CHOICES) 
-                    .setRequired(true))
-            .toJSON(),
-    ];
-
-    if (!clientId) {
-        console.error("❌ ERROR: CLIENT_ID environment variable is missing. Cannot register commands.");
-        return;
-    }
-
-    try {
-        const rest = new REST({ version: '10' }).setToken(token);
-        console.log('Started refreshing application (/) commands.');
-        
-        await rest.put(
-            Routes.applicationCommands(clientId),
-            { body: commands },
-        );
-
-        console.log('Successfully reloaded application (/) commands.');
-    } catch (error) {
-        console.error('❌ Failed to register slash commands during startup:', error);
-    }
+// --- CRITICAL CHECKS ---
+if (!DISCORD_TOKEN || !GUILD_ID || !ROBLOX_COOKIE || !ROBLOX_GROUP_ID) {
+  console.error('❌ ERROR: Missing required environment variables. Please check your .env file or Render settings.');
+  process.exit(1);
 }
 
-// ----------------------------------------------------------------
-// 4. CLIENT READY & INITIALIZATION
-// ----------------------------------------------------------------
+// Express server to keep bot alive for hosting services like UptimeRobot
+const app = express();
+app.get('/', (req, res) => res.send('Bot is running!'));
+app.listen(PORT, () => console.log(`Express server running on port ${PORT}`));
 
-client.on('clientReady', async () => {
-    console.log(`Logged in as ${client.user.tag}!`);
-    
-    await registerSlashCommands(); 
-    
-    if (process.env.ROBLOX_COOKIE) {
-        try {
-            const currentUser = await noblox.setCookie(process.env.ROBLOX_COOKIE);
-            console.log(`✅ Logged into Roblox as ${currentUser.UserName} (${currentUser.UserID})`);
-        } catch (error) {
-            console.error('❌ Failed to log into Roblox. Commands depending on Roblox WILL FAIL:', error);
+// Discord client
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+// Login to Roblox
+async function loginRoblox() {
+  try {
+    await noblox.setCookie(ROBLOX_COOKIE);
+    const currentUser = await noblox.getCurrentUser();
+    console.log(`✅ Logged into Roblox as ${currentUser.UserName} (${currentUser.UserID})`);
+  } catch (err) {
+    console.error('❌ Failed to log in to Roblox. Check your ROBLOX_COOKIE and ensure it is valid.');
+    console.error(err);
+    process.exit(1); 
+  }
+}
+
+// Register slash commands with Discord
+async function registerCommands() {
+  // First, get the rank information from Roblox
+  const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
+  if (!ranks) {
+    console.error('❌ Could not retrieve ranks from the Roblox group. Please check the group ID and bot permissions.');
+    process.exit(1);
+  }
+
+  // Create an array of choices for the Discord command, filtering out the guest rank
+  const rankChoices = ranks
+    .filter(r => r.rank > 0)
+    .map(r => ({ name: r.name, value: r.rank }));
+
+  const commands = [
+    {
+      name: 'rank',
+      description: 'Assign a rank to a Roblox user',
+      options: [
+        {
+          name: 'username',
+          type: 3, // STRING
+          description: 'The Roblox username to rank',
+          required: true
+        },
+        {
+          name: 'rank',
+          type: 4, // INTEGER
+          description: 'The Roblox rank to assign',
+          required: true,
+          choices: rankChoices
         }
+      ]
     }
-    
-    console.log('Bot initialization complete.');
-}); 
+  ];
 
-// ----------------------------------------------------------------
-// 5. INTERACTION HANDLING LOGIC
-// ----------------------------------------------------------------
+  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+  try {
+    console.log('🔄 Started refreshing application (/) commands.');
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+      { body: commands }
+    );
+    console.log('✅ Successfully reloaded application (/) commands.');
+  } catch (err) {
+    console.error('❌ Failed to register slash commands.');
+    console.error(err);
+  }
+}
 
+// Handle Discord interactions
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
+  if (!interaction.isChatInputCommand()) return;
 
-    const commandName = interaction.commandName;
-
-    // NO /ping command handling is present here.
-
-    // All slow commands (like /rank) must defer the reply
-    try {
-        await interaction.deferReply({ ephemeral: false }); 
-    } catch (e) {
-        console.error(`Failed to defer reply for /${commandName}:`, e);
-        return;
+  if (interaction.commandName === 'rank') {
+    // Permission check
+    if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
+      return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
     }
-    
-    // Command execution logic
+
+    await interaction.deferReply();
+
+    const username = interaction.options.getString('username');
+    const rankNumber = interaction.options.getInteger('rank');
+
     try {
-        if (commandName === 'rank') {
-            
-            // 1. Get the command options
-            const targetUsername = interaction.options.getString('username'); 
-            const targetRankId = interaction.options.getInteger('rankid'); 
+      const userId = await noblox.getIdFromUsername(username);
 
-            // **!!! REPLACE with your actual Roblox Group ID !!!**
-            const groupId = 1234567; // <-- CHANGE THIS TO YOUR GROUP ID
+      if (!userId) {
+        return interaction.editReply({ content: `❌ Roblox user **${username}** was not found. Please check the spelling.` });
+      }
 
-            // 2. Look up the Roblox User ID
-            const targetUserId = await noblox.getIdFromUsername(targetUsername);
+      const ranks = await noblox.getRoles(parseInt(ROBLOX_GROUP_ID));
+      const selectedRank = ranks.find(r => r.rank === rankNumber);
+      const selectedRankName = selectedRank ? selectedRank.name : 'Unknown Rank';
 
-            if (!targetUserId) {
-                await interaction.editReply({ 
-                    content: `❌ Roblox user **${targetUsername}** not found.`, 
-                    ephemeral: true 
-                });
-                return;
-            }
+      await noblox.setRank(parseInt(ROBLOX_GROUP_ID), userId, rankNumber);
 
-            // 3. Set the Rank
-            await noblox.setRank({ 
-                group: groupId, 
-                target: targetUserId, 
-                rank: targetRankId 
-            });
+      const successMessage = `✅ **${username}** has been ranked to **${selectedRankName}** successfully.`;
+      await interaction.editReply({ content: successMessage });
 
-            // 4. Send Success Message
-            await interaction.editReply({ 
-                content: `✅ Successfully ranked **${targetUsername}** to rank ID **${targetRankId}**!`, 
-                ephemeral: false 
-            });
+      const logsChannel = interaction.guild.channels.cache.get(LOGS_CHANNEL_ID);
+      if (logsChannel) {
+        logsChannel.send(`A rank change occurred: **${interaction.user.tag}** ranked **${username}** to **${selectedRankName}**.`);
+      }
 
-        } else {
-            // Fallback for any unhandled command
-            await interaction.editReply({ content: `Unknown command: /${commandName}`, ephemeral: true });
-        }
-        
-    } catch (error) {
-        // Catch any error during command execution (e.g., Roblox error)
-        console.error(`CRITICAL ERROR during /${commandName}:`, error);
-        await interaction.editReply({ 
-            content: `❌ Failed to execute /${commandName}. Error: ${error.message || 'Check bot logs.'}`, 
-            ephemeral: true 
-        });
+    } catch (err) {
+      console.error('❌ Error during rank change:', err);
+      let errorMessage = '❌ An unexpected error occurred. Please try again.';
+
+      if (err.message.includes('No group with the ID')) {
+        errorMessage = '❌ Failed to find the Roblox group. Please check the `ROBLOX_GROUP_ID`.';
+      } else if (err.message.includes('Authorization has been denied for this request.')) {
+        errorMessage = '❌ Failed to set rank. The bot\'s Roblox account may not have permission, or its rank is too low.';
+      } else if (err.message.includes('The specified rank is not a valid rank')) {
+        errorMessage = '❌ The provided rank ID is not a valid rank in the group.';
+      }
+
+      await interaction.editReply({ content: errorMessage });
     }
+  }
 });
 
+// Initialize the bot
+client.once('clientReady', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  await loginRoblox();
+  await registerCommands();
+});
 
-// ----------------------------------------------------------------
-// 6. START BOT
-// ----------------------------------------------------------------
-client.login(process.env.DISCORD_TOKEN);
+client.login(DISCORD_TOKEN);
